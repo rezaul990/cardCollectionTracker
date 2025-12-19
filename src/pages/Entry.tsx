@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
+import { sendEntryNotification, sendBranchStatusUpdate } from '../utils/telegram';
 
 interface EntryProps {
   userEmail: string;
@@ -222,6 +223,21 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
           return newMap;
         });
       }
+      // Send Telegram notification
+      const execName = executives.find(e => e.id === execId)?.name || 'Unknown';
+      sendEntryNotification({
+        branchName,
+        executiveName: execName,
+        date,
+        targetQty: newTarget,
+        achQty: newAch,
+        cashQty: newCash,
+        isUpdate: !!existing,
+      });
+
+      // Send branch status update (which branches entered/not entered)
+      sendBranchStatusUpdate(date);
+
       setMessage({ type: 'success', text: 'Saved!', execId });
     } catch (error) {
       console.error('Error saving:', error);

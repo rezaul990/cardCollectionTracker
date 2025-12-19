@@ -3,6 +3,7 @@ import { collection, query, where, getDocs, orderBy, updateDoc, deleteDoc, doc, 
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
 import { getAchievementBgColor } from '../components/StatCard';
+import { sendTelegramMessage, formatSummaryReport } from '../utils/telegram';
 
 interface AdminProps {
   userEmail: string;
@@ -30,7 +31,13 @@ interface CollectionRow {
   editHistory?: EditHistory[];
 }
 
+interface BranchData {
+  id: string;
+  name: string;
+}
+
 export default function Admin({ userEmail }: AdminProps) {
+  const [branchList, setBranchList] = useState<BranchData[]>([]);
   const [branches, setBranches] = useState<Map<string, string>>(new Map());
   const [executives, setExecutives] = useState<Map<string, string>>(new Map());
   const [collections, setCollections] = useState<CollectionRow[]>([]);
@@ -40,15 +47,19 @@ export default function Admin({ userEmail }: AdminProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ target: '', ach: '', cash: '', remarks: '' });
   const [saving, setSaving] = useState(false);
+  const [sendingTelegram, setSendingTelegram] = useState(false);
 
   const fetchMasterData = async () => {
     try {
       const branchSnapshot = await getDocs(collection(db, 'Branches'));
       const branchMap = new Map<string, string>();
+      const branchArr: BranchData[] = [];
       branchSnapshot.docs.forEach(doc => {
         branchMap.set(doc.id, doc.data().branchName);
+        branchArr.push({ id: doc.id, name: doc.data().branchName });
       });
       setBranches(branchMap);
+      setBranchList(branchArr);
 
       const execSnapshot = await getDocs(collection(db, 'executives'));
       const execMap = new Map<string, string>();
@@ -101,6 +112,8 @@ export default function Admin({ userEmail }: AdminProps) {
     fetchMasterData().then(({ branchMap, execMap }) => {
       if (branchMap.size > 0) {
         fetchCollections(branchMap, execMap);
+      } else {
+        setLoading(false);
       }
     });
   }, []);
@@ -133,51 +146,24 @@ export default function Admin({ userEmail }: AdminProps) {
       const newAch = parseInt(editForm.ach) || 0;
       const newCash = parseInt(editForm.cash) || 0;
 
-      // Build edit history
       const newHistory: EditHistory[] = [...(row.editHistory || [])];
-      
       if (row.targetQty !== newTarget) {
-        newHistory.push({
-          field: 'Target',
-          oldValue: row.targetQty,
-          newValue: newTarget,
-          editedAt: new Date(),
-          editedBy: userEmail + ' (Admin)',
-        });
+        newHistory.push({ field: 'Target', oldValue: row.targetQty, newValue: newTarget, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
       }
       if (row.achQty !== newAch) {
-        newHistory.push({
-          field: 'ACH',
-          oldValue: row.achQty,
-          newValue: newAch,
-          editedAt: new Date(),
-          editedBy: userEmail + ' (Admin)',
-        });
+        newHistory.push({ field: 'ACH', oldValue: row.achQty, newValue: newAch, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
       }
       if (row.cashQty !== newCash) {
-        newHistory.push({
-          field: 'Cash',
-          oldValue: row.cashQty,
-          newValue: newCash,
-          editedAt: new Date(),
-          editedBy: userEmail + ' (Admin)',
-        });
+        newHistory.push({ field: 'Cash', oldValue: row.cashQty, newValue: newCash, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
       }
 
       await updateDoc(doc(db, 'dailyCollections', row.id), {
-        targetQty: newTarget,
-        achQty: newAch,
-        cashQty: newCash,
-        remarks: editForm.remarks,
-        editHistory: newHistory,
-        lastUpdated: serverTimestamp(),
+        targetQty: newTarget, achQty: newAch, cashQty: newCash, remarks: editForm.remarks,
+        editHistory: newHistory, lastUpdated: serverTimestamp(),
       });
 
-      // Update local state
-      setCollections(prev => prev.map(c => 
-        c.id === row.id 
-          ? { ...c, targetQty: newTarget, achQty: newAch, cashQty: newCash, remarks: editForm.remarks, editHistory: newHistory }
-          : c
+      setCollections(prev => prev.map(c =>
+        c.id === row.id ? { ...c, targetQty: newTarget, achQty: newAch, cashQty: newCash, remarks: editForm.remarks, editHistory: newHistory } : c
       ));
       setEditingId(null);
     } catch (error) {
@@ -190,7 +176,6 @@ export default function Admin({ userEmail }: AdminProps) {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this entry?')) return;
-    
     try {
       await deleteDoc(doc(db, 'dailyCollections', id));
       setCollections(prev => prev.filter(c => c.id !== id));
@@ -204,20 +189,54 @@ export default function Admin({ userEmail }: AdminProps) {
     const exportData = collections.map(row => {
       const balance = row.targetQty - row.achQty;
       const achievementPercent = row.targetQty > 0 ? (row.achQty / row.targetQty) * 100 : 0;
-      return {
-        date: row.date,
-        branchName: row.branchName,
-        executiveName: row.executiveName,
-        targetQty: row.targetQty,
-        achQty: row.achQty,
-        cashQty: row.cashQty,
-        balance,
-        achievementPercent
-      };
+      return { date: row.date, branchName: row.branchName, executiveName: row.executiveName, targetQty: row.targetQty, achQty: row.achQty, cashQty: row.cashQty, balance, achievementPercent };
     });
     const filename = startDate === endDate ? `Daily_Collection_${startDate}` : `Collection_${startDate}_to_${endDate}`;
     exportToExcel(exportData, filename);
   };
+
+  // Get branch summary for today
+  const getBranchSummary = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const todayCollections = collections.filter(c => c.date === today);
+    
+    return branchList.map(branch => {
+      const branchEntries = todayCollections.filter(c => c.branchId === branch.id);
+      const totalTarget = branchEntries.reduce((sum, e) => sum + e.targetQty, 0);
+      const totalAch = branchEntries.reduce((sum, e) => sum + e.achQty, 0);
+      return {
+        branchName: branch.name,
+        hasEntry: branchEntries.length > 0,
+        totalTarget,
+        totalAch,
+        executiveCount: branchEntries.length,
+      };
+    });
+  };
+
+  const handleSendTelegram = async () => {
+    setSendingTelegram(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const summary = getBranchSummary();
+      const message = formatSummaryReport(today, summary);
+      const success = await sendTelegramMessage(message);
+      if (success) {
+        alert('Summary sent to Telegram!');
+      } else {
+        alert('Failed to send. Check bot token and chat ID.');
+      }
+    } catch (error) {
+      console.error('Telegram error:', error);
+      alert('Failed to send to Telegram');
+    } finally {
+      setSendingTelegram(false);
+    }
+  };
+
+  const branchSummary = getBranchSummary();
+  const enteredCount = branchSummary.filter(b => b.hasEntry).length;
+  const notEnteredCount = branchSummary.filter(b => !b.hasEntry).length;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -228,32 +247,53 @@ export default function Admin({ userEmail }: AdminProps) {
           <p className="text-gray-500">View, edit, and manage all collection data</p>
         </div>
 
+        {/* Today's Summary Card */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+          <div className="flex flex-wrap justify-between items-start gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 mb-3">Today's Entry Status</h2>
+              <div className="flex gap-6">
+                <div>
+                  <span className="text-2xl font-bold text-green-600">{enteredCount}</span>
+                  <p className="text-sm text-gray-500">Branches Entered</p>
+                </div>
+                <div>
+                  <span className="text-2xl font-bold text-red-600">{notEnteredCount}</span>
+                  <p className="text-sm text-gray-500">Not Entered</p>
+                </div>
+              </div>
+              {notEnteredCount > 0 && (
+                <div className="mt-3">
+                  <p className="text-sm text-gray-600">Missing: {branchSummary.filter(b => !b.hasEntry).map(b => b.branchName).join(', ')}</p>
+                </div>
+              )}
+            </div>
+            <button
+              onClick={handleSendTelegram}
+              disabled={sendingTelegram}
+              className="px-4 py-2 bg-blue-500 text-white font-medium rounded-md hover:bg-blue-600 disabled:opacity-50 flex items-center gap-2"
+            >
+              <span>📤</span>
+              {sendingTelegram ? 'Sending...' : 'Send to Telegram'}
+            </button>
+          </div>
+        </div>
+
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
           <div className="flex flex-wrap gap-4 items-end">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none"
-              />
+              <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
-            <button
-              onClick={handleExport}
-              disabled={collections.length === 0}
-              className="px-4 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
-            >
+            <button onClick={handleExport} disabled={collections.length === 0}
+              className="px-4 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700 disabled:opacity-50">
               Download Excel
             </button>
           </div>
@@ -278,97 +318,42 @@ export default function Admin({ userEmail }: AdminProps) {
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-4 text-center text-gray-500">Loading...</td>
-                  </tr>
+                  <tr><td colSpan={9} className="px-4 py-4 text-center text-gray-500">Loading...</td></tr>
                 ) : collections.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-4 text-center text-gray-500">No data available</td>
-                  </tr>
+                  <tr><td colSpan={9} className="px-4 py-4 text-center text-gray-500">No data available</td></tr>
                 ) : (
                   collections.map((row) => {
                     const balance = row.targetQty - row.achQty;
                     const percent = row.targetQty > 0 ? (row.achQty / row.targetQty) * 100 : 0;
                     const isEditing = editingId === row.id;
-
                     return (
                       <tr key={row.id} className={isEditing ? 'bg-yellow-50' : ''}>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.date}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.branchName}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.executiveName}</td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              value={editForm.target}
-                              onChange={(e) => setEditForm({ ...editForm, target: e.target.value })}
-                              className="w-20 px-2 py-1 border rounded text-sm"
-                            />
-                          ) : (
-                            row.targetQty
-                          )}
+                          {isEditing ? <input type="number" value={editForm.target} onChange={(e) => setEditForm({ ...editForm, target: e.target.value })} className="w-20 px-2 py-1 border rounded text-sm" /> : row.targetQty}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              value={editForm.ach}
-                              onChange={(e) => setEditForm({ ...editForm, ach: e.target.value })}
-                              className="w-20 px-2 py-1 border rounded text-sm"
-                            />
-                          ) : (
-                            row.achQty
-                          )}
+                          {isEditing ? <input type="number" value={editForm.ach} onChange={(e) => setEditForm({ ...editForm, ach: e.target.value })} className="w-20 px-2 py-1 border rounded text-sm" /> : row.achQty}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          {isEditing ? (
-                            <input
-                              type="number"
-                              value={editForm.cash}
-                              onChange={(e) => setEditForm({ ...editForm, cash: e.target.value })}
-                              className="w-20 px-2 py-1 border rounded text-sm"
-                            />
-                          ) : (
-                            row.cashQty
-                          )}
+                          {isEditing ? <input type="number" value={editForm.cash} onChange={(e) => setEditForm({ ...editForm, cash: e.target.value })} className="w-20 px-2 py-1 border rounded text-sm" /> : row.cashQty}
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{balance}</td>
                         <td className="px-4 py-3 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAchievementBgColor(percent)}`}>
-                            {percent.toFixed(0)}%
-                          </span>
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAchievementBgColor(percent)}`}>{percent.toFixed(0)}%</span>
                         </td>
                         <td className="px-4 py-3 whitespace-nowrap text-sm">
                           {isEditing ? (
                             <div className="flex gap-2">
-                              <button
-                                onClick={() => handleSaveEdit(row)}
-                                disabled={saving}
-                                className="text-green-600 hover:text-green-800 font-medium"
-                              >
-                                {saving ? '...' : 'Save'}
-                              </button>
-                              <button
-                                onClick={handleCancelEdit}
-                                className="text-gray-600 hover:text-gray-800"
-                              >
-                                Cancel
-                              </button>
+                              <button onClick={() => handleSaveEdit(row)} disabled={saving} className="text-green-600 hover:text-green-800 font-medium">{saving ? '...' : 'Save'}</button>
+                              <button onClick={handleCancelEdit} className="text-gray-600 hover:text-gray-800">Cancel</button>
                             </div>
                           ) : (
                             <div className="flex gap-2">
-                              <button
-                                onClick={() => handleEdit(row)}
-                                className="text-blue-600 hover:text-blue-800"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => handleDelete(row.id)}
-                                className="text-red-600 hover:text-red-800"
-                              >
-                                Delete
-                              </button>
+                              <button onClick={() => handleEdit(row)} className="text-blue-600 hover:text-blue-800">Edit</button>
+                              <button onClick={() => handleDelete(row.id)} className="text-red-600 hover:text-red-800">Delete</button>
                             </div>
                           )}
                         </td>
@@ -389,14 +374,9 @@ function exportToExcel(data: { date: string; branchName: string; executiveName: 
   import('xlsx').then(XLSX => {
     import('file-saver').then(({ saveAs }) => {
       const worksheetData = data.map(row => ({
-        'Date': row.date,
-        'Branch': row.branchName,
-        'Executive': row.executiveName,
-        'Target': row.targetQty,
-        'ACH': row.achQty,
-        'Cash': row.cashQty,
-        'Balance': row.balance,
-        'Achievement %': `${row.achievementPercent.toFixed(1)}%`
+        'Date': row.date, 'Branch': row.branchName, 'Executive': row.executiveName,
+        'Target': row.targetQty, 'ACH': row.achQty, 'Cash': row.cashQty,
+        'Balance': row.balance, 'Achievement %': `${row.achievementPercent.toFixed(1)}%`
       }));
       const worksheet = XLSX.utils.json_to_sheet(worksheetData);
       const workbook = XLSX.utils.book_new();
