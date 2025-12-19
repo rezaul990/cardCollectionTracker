@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import Entry from './pages/Entry';
 import Executives from './pages/Executives';
 import Admin from './pages/Admin';
+import Branches from './pages/Branches';
 
 const ADMIN_EMAIL = 'admin@card.com';
 
@@ -171,6 +172,18 @@ function App() {
               <Navigate to="/login" />
             ) : isAdmin ? (
               <Admin userEmail={user.email || ''} />
+            ) : (
+              <Navigate to="/dashboard" />
+            )
+          }
+        />
+        <Route
+          path="/branches"
+          element={
+            !user ? (
+              <Navigate to="/login" />
+            ) : isAdmin ? (
+              <Branches userEmail={user.email || ''} />
             ) : (
               <Navigate to="/dashboard" />
             )

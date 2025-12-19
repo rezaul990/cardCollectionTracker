@@ -32,14 +32,24 @@ export default function Navbar({ userEmail, isAdmin }: NavbarProps) {
             <span className="text-xl font-semibold text-gray-900">Collection Tracker</span>
             <div className="hidden sm:flex space-x-4">
               {isAdmin ? (
-                <Link
-                  to="/admin"
-                  className={`px-3 py-2 rounded-md text-sm font-medium ${
-                    isActive('/admin') ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:text-gray-900'
-                  }`}
-                >
-                  Dashboard
-                </Link>
+                <>
+                  <Link
+                    to="/admin"
+                    className={`px-3 py-2 rounded-md text-sm font-medium ${
+                      isActive('/admin') ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Dashboard
+                  </Link>
+                  <Link
+                    to="/branches"
+                    className={`px-3 py-2 rounded-md text-sm font-medium ${
+                      isActive('/branches') ? 'bg-blue-100 text-blue-700' : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Branches
+                  </Link>
+                </>
               ) : (
                 managerLinks.map((link) => (
                   <Link
@@ -68,14 +78,24 @@ export default function Navbar({ userEmail, isAdmin }: NavbarProps) {
         {/* Mobile nav */}
         <div className="sm:hidden pb-3 flex flex-wrap gap-2">
           {isAdmin ? (
-            <Link
-              to="/admin"
-              className={`px-3 py-2 rounded-md text-sm font-medium ${
-                isActive('/admin') ? 'bg-blue-100 text-blue-700' : 'text-gray-600'
-              }`}
-            >
-              Dashboard
-            </Link>
+            <>
+              <Link
+                to="/admin"
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  isActive('/admin') ? 'bg-blue-100 text-blue-700' : 'text-gray-600'
+                }`}
+              >
+                Dashboard
+              </Link>
+              <Link
+                to="/branches"
+                className={`px-3 py-2 rounded-md text-sm font-medium ${
+                  isActive('/branches') ? 'bg-blue-100 text-blue-700' : 'text-gray-600'
+                }`}
+              >
+                Branches
+              </Link>
+            </>
           ) : (
             managerLinks.map((link) => (
               <Link
