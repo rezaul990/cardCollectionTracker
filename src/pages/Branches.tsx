@@ -31,7 +31,7 @@ export default function Branches({ userEmail }: BranchesProps) {
         branchName: doc.data().branchName,
         managerEmail: doc.data().managerEmail,
       }));
-      setBranches(data);
+      setBranches(data.sort((a, b) => a.branchName.localeCompare(b.branchName)));
     } catch (error) {
       console.error('Error fetching branches:', error);
     } finally {

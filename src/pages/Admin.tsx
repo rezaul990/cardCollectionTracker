@@ -43,6 +43,7 @@ export default function Admin({ userEmail }: AdminProps) {
   const [collections, setCollections] = useState<CollectionRow[]>([]);
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ target: '', ach: '', cash: '', remarks: '' });
@@ -59,7 +60,7 @@ export default function Admin({ userEmail }: AdminProps) {
         branchArr.push({ id: doc.id, name: doc.data().branchName });
       });
       setBranches(branchMap);
-      setBranchList(branchArr);
+      setBranchList(branchArr.sort((a, b) => a.name.localeCompare(b.name)));
 
       const execSnapshot = await getDocs(collection(db, 'executives'));
       const execMap = new Map<string, string>();
@@ -186,12 +187,13 @@ export default function Admin({ userEmail }: AdminProps) {
   };
 
   const handleExport = () => {
-    const exportData = collections.map(row => {
+    const exportData = filteredCollections.map(row => {
       const balance = row.targetQty - row.achQty;
       const achievementPercent = row.targetQty > 0 ? (row.achQty / row.targetQty) * 100 : 0;
       return { date: row.date, branchName: row.branchName, executiveName: row.executiveName, targetQty: row.targetQty, achQty: row.achQty, cashQty: row.cashQty, balance, achievementPercent };
     });
-    const filename = startDate === endDate ? `Daily_Collection_${startDate}` : `Collection_${startDate}_to_${endDate}`;
+    const branchName = selectedBranch === 'all' ? '' : `_${branchList.find(b => b.id === selectedBranch)?.name || ''}`;
+    const filename = startDate === endDate ? `Daily_Collection${branchName}_${startDate}` : `Collection${branchName}_${startDate}_to_${endDate}`;
     exportToExcel(exportData, filename);
   };
 
@@ -238,6 +240,12 @@ export default function Admin({ userEmail }: AdminProps) {
   const enteredCount = branchSummary.filter(b => b.hasEntry).length;
   const notEnteredCount = branchSummary.filter(b => !b.hasEntry).length;
 
+  // Filter collections by selected branch and sort by branch name A-Z
+  const filteredCollections = (selectedBranch === 'all' 
+    ? collections 
+    : collections.filter(c => c.branchId === selectedBranch)
+  ).sort((a, b) => a.branchName.localeCompare(b.branchName));
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar userEmail={userEmail} isAdmin={true} />
@@ -283,6 +291,19 @@ export default function Admin({ userEmail }: AdminProps) {
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
           <div className="flex flex-wrap gap-4 items-end">
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Branch</label>
+              <select
+                value={selectedBranch}
+                onChange={(e) => setSelectedBranch(e.target.value)}
+                className="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none min-w-48"
+              >
+                <option value="all">All Branches</option>
+                {branchList.map(branch => (
+                  <option key={branch.id} value={branch.id}>{branch.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
               <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
                 className="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
@@ -292,7 +313,7 @@ export default function Admin({ userEmail }: AdminProps) {
               <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
                 className="px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 outline-none" />
             </div>
-            <button onClick={handleExport} disabled={collections.length === 0}
+            <button onClick={handleExport} disabled={filteredCollections.length === 0}
               className="px-4 py-2 bg-green-600 text-white font-medium rounded-md hover:bg-green-700 disabled:opacity-50">
               Download Excel
             </button>
@@ -319,10 +340,10 @@ export default function Admin({ userEmail }: AdminProps) {
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
                   <tr><td colSpan={9} className="px-4 py-4 text-center text-gray-500">Loading...</td></tr>
-                ) : collections.length === 0 ? (
+                ) : filteredCollections.length === 0 ? (
                   <tr><td colSpan={9} className="px-4 py-4 text-center text-gray-500">No data available</td></tr>
                 ) : (
-                  collections.map((row) => {
+                  filteredCollections.map((row) => {
                     const balance = row.targetQty - row.achQty;
                     const percent = row.targetQty > 0 ? (row.achQty / row.targetQty) * 100 : 0;
                     const isEditing = editingId === row.id;
