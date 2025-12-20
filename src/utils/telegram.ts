@@ -37,8 +37,10 @@ export const formatSummaryReport = (
   date: string,
   summaries: BranchSummary[]
 ): string => {
-  const entered = summaries.filter(s => s.hasEntry);
-  const notEntered = summaries.filter(s => !s.hasEntry);
+  // Sort A-Z
+  const sortedSummaries = [...summaries].sort((a, b) => a.branchName.localeCompare(b.branchName));
+  const entered = sortedSummaries.filter(s => s.hasEntry);
+  const notEntered = sortedSummaries.filter(s => !s.hasEntry);
 
   const totalTarget = entered.reduce((sum, s) => sum + s.totalTarget, 0);
   const totalAch = entered.reduce((sum, s) => sum + s.totalAch, 0);
@@ -141,7 +143,7 @@ export const sendBranchStatusUpdate = async (date: string): Promise<boolean> => 
       });
     });
 
-    // Separate entered and not entered
+    // Separate entered and not entered, then sort A-Z
     const entered: { name: string; target: number; ach: number }[] = [];
     const notEntered: string[] = [];
 
@@ -153,6 +155,10 @@ export const sendBranchStatusUpdate = async (date: string): Promise<boolean> => 
         notEntered.push(branch.name);
       }
     });
+
+    // Sort both lists A-Z
+    entered.sort((a, b) => a.name.localeCompare(b.name));
+    notEntered.sort((a, b) => a.localeCompare(b));
 
     // Calculate totals
     const totalTarget = entered.reduce((sum, b) => sum + b.target, 0);
