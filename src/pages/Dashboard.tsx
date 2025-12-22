@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
 import StatCard, { getAchievementColor, getAchievementBgColor } from '../components/StatCard';
@@ -23,6 +23,7 @@ interface DailyEntry {
 export default function Dashboard({ userEmail, branchId, branchName }: DashboardProps) {
   const [execNames, setExecNames] = useState<Map<string, string>>(new Map());
   const [todayData, setTodayData] = useState<DailyEntry[]>([]);
+  const [lowestPerformers, setLowestPerformers] = useState<{ name: string; totalTarget: number; totalAch: number; avgPercent: number }[]>([]);
   const [loading, setLoading] = useState(true);
 
   const today = new Date().toISOString().split('T')[0];
@@ -60,6 +61,44 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
           };
         });
         setTodayData(data);
+
+        // Fetch last 3 days data for lowest performers
+        const threeDaysAgo = new Date();
+        threeDaysAgo.setDate(threeDaysAgo.getDate() - 2);
+        const startStr = threeDaysAgo.toISOString().split('T')[0];
+
+        const last3Query = query(
+          collection(db, 'dailyCollections'),
+          where('branchId', '==', branchId),
+          where('date', '>=', startStr),
+          where('date', '<=', today),
+          orderBy('date', 'desc')
+        );
+        const last3Snapshot = await getDocs(last3Query);
+        
+        // Calculate average per executive
+        const execStats = new Map<string, { name: string; totalTarget: number; totalAch: number }>();
+        last3Snapshot.docs.forEach(doc => {
+          const d = doc.data();
+          const key = d.executiveId;
+          const current = execStats.get(key) || { name: execMap.get(d.executiveId) || 'Unknown', totalTarget: 0, totalAch: 0 };
+          execStats.set(key, {
+            name: current.name,
+            totalTarget: current.totalTarget + (d.targetQty || 0),
+            totalAch: current.totalAch + (d.achQty || 0),
+          });
+        });
+
+        const performers = Array.from(execStats.values())
+          .filter(e => e.totalTarget > 0)
+          .map(e => ({
+            ...e,
+            avgPercent: (e.totalAch / e.totalTarget) * 100,
+          }))
+          .sort((a, b) => a.avgPercent - b.avgPercent)
+          .slice(0, 2);
+
+        setLowestPerformers(performers);
       } catch (error) {
         console.error('Error fetching data:', error);
       } finally {
@@ -109,6 +148,28 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
             colorClass={getAchievementColor(achievementPercent)}
           />
         </div>
+
+        {/* Lowest 2 Performers - Last 3 Days */}
+        {lowestPerformers.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm border border-red-200 p-4 mb-8">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">📉 Lowest Performers (Last 3 Days Avg)</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {lowestPerformers.map((p, idx) => (
+                <div key={idx} className="bg-red-50 rounded-lg p-4 border border-red-100">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium text-gray-900">{p.name}</p>
+                      <p className="text-sm text-gray-500">Target: {p.totalTarget} | ACH: {p.totalAch}</p>
+                    </div>
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAchievementBgColor(p.avgPercent)}`}>
+                      {p.avgPercent.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Executive-wise Table */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">

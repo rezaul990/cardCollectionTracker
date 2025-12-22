@@ -49,6 +49,7 @@ export default function Admin({ userEmail }: AdminProps) {
   const [editForm, setEditForm] = useState({ target: '', ach: '', cash: '', remarks: '' });
   const [saving, setSaving] = useState(false);
   const [sendingTelegram, setSendingTelegram] = useState(false);
+  const [last3DaysData, setLast3DaysData] = useState<CollectionRow[]>([]);
 
   const fetchMasterData = async () => {
     try {
@@ -72,6 +73,44 @@ export default function Admin({ userEmail }: AdminProps) {
     } catch (error) {
       console.error('Error fetching master data:', error);
       return { branchMap: new Map(), execMap: new Map() };
+    }
+  };
+
+  // Fetch last 3 days data for lowest performers
+  const fetchLast3DaysData = async (branchMap: Map<string, string>, execMap: Map<string, string>) => {
+    try {
+      const today = new Date();
+      const threeDaysAgo = new Date(today);
+      threeDaysAgo.setDate(today.getDate() - 2);
+      const startStr = threeDaysAgo.toISOString().split('T')[0];
+      const endStr = today.toISOString().split('T')[0];
+
+      const q = query(
+        collection(db, 'dailyCollections'),
+        where('date', '>=', startStr),
+        where('date', '<=', endStr),
+        orderBy('date', 'desc')
+      );
+      const snapshot = await getDocs(q);
+      const data = snapshot.docs.map(doc => {
+        const d = doc.data();
+        return {
+          id: doc.id,
+          date: d.date,
+          branchId: d.branchId,
+          branchName: branchMap.get(d.branchId) || 'Unknown',
+          executiveId: d.executiveId,
+          executiveName: execMap.get(d.executiveId) || 'Unknown',
+          targetQty: d.targetQty || 0,
+          achQty: d.achQty || 0,
+          cashQty: d.cashQty || 0,
+          remarks: d.remarks || '',
+          editHistory: d.editHistory || [],
+        };
+      });
+      setLast3DaysData(data);
+    } catch (error) {
+      console.error('Error fetching last 3 days data:', error);
     }
   };
 
@@ -113,6 +152,7 @@ export default function Admin({ userEmail }: AdminProps) {
     fetchMasterData().then(({ branchMap, execMap }) => {
       if (branchMap.size > 0) {
         fetchCollections(branchMap, execMap);
+        fetchLast3DaysData(branchMap, execMap);
       } else {
         setLoading(false);
       }
@@ -246,6 +286,36 @@ export default function Admin({ userEmail }: AdminProps) {
     : collections.filter(c => c.branchId === selectedBranch)
   ).sort((a, b) => a.branchName.localeCompare(b.branchName));
 
+  // Calculate lowest 10 performers based on last 3 days average
+  const getLowestPerformers = () => {
+    const execStats = new Map<string, { name: string; branch: string; totalTarget: number; totalAch: number; days: number }>();
+    
+    last3DaysData.forEach(row => {
+      const key = row.executiveId;
+      const current = execStats.get(key) || { name: row.executiveName, branch: row.branchName, totalTarget: 0, totalAch: 0, days: 0 };
+      execStats.set(key, {
+        name: row.executiveName,
+        branch: row.branchName,
+        totalTarget: current.totalTarget + row.targetQty,
+        totalAch: current.totalAch + row.achQty,
+        days: current.days + 1,
+      });
+    });
+
+    const performers = Array.from(execStats.values())
+      .filter(e => e.totalTarget > 0)
+      .map(e => ({
+        ...e,
+        avgPercent: (e.totalAch / e.totalTarget) * 100,
+      }))
+      .sort((a, b) => a.avgPercent - b.avgPercent)
+      .slice(0, 10);
+
+    return performers;
+  };
+
+  const lowestPerformers = getLowestPerformers();
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Navbar userEmail={userEmail} isAdmin={true} />
@@ -286,6 +356,43 @@ export default function Admin({ userEmail }: AdminProps) {
             </button>
           </div>
         </div>
+
+        {/* Lowest 10 Performers - Last 3 Days */}
+        {lowestPerformers.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+            <h2 className="text-lg font-semibold text-gray-900 mb-3">📉 Lowest 10 Performers (Last 3 Days Avg)</h2>
+            <div className="overflow-x-auto">
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Executive</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total Target</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total ACH</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Avg %</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {lowestPerformers.map((p, idx) => (
+                    <tr key={idx} className={idx < 3 ? 'bg-red-50' : ''}>
+                      <td className="px-4 py-2 text-sm font-medium text-gray-900">{idx + 1}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{p.name}</td>
+                      <td className="px-4 py-2 text-sm text-gray-500">{p.branch}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{p.totalTarget}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{p.totalAch}</td>
+                      <td className="px-4 py-2">
+                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAchievementBgColor(p.avgPercent)}`}>
+                          {p.avgPercent.toFixed(1)}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
