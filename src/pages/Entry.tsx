@@ -11,7 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
-import { sendEntryNotification, sendBranchStatusUpdate } from '../utils/telegram';
+import { sendEntryNotification, sendBranchStatusUpdate, isAfter9PM, sendMissingAchReport } from '../utils/telegram';
 
 interface EntryProps {
   userEmail: string;
@@ -237,6 +237,11 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
 
       // Send branch status update (which branches entered/not entered)
       sendBranchStatusUpdate(date);
+
+      // After 9 PM, send missing ACH report when someone enters ACH
+      if (isAfter9PM() && newAch > 0) {
+        sendMissingAchReport(date);
+      }
 
       setMessage({ type: 'success', text: 'Saved!', execId });
     } catch (error) {

@@ -197,3 +197,97 @@ export const sendBranchStatusUpdate = async (date: string): Promise<boolean> => 
     return false;
   }
 };
+
+
+// Check if current time is after 9 PM
+export const isAfter9PM = (): boolean => {
+  const now = new Date();
+  return now.getHours() >= 21; // 21:00 = 9 PM
+};
+
+// Send report of executives who haven't entered ACH (after 9 PM)
+export const sendMissingAchReport = async (date: string): Promise<boolean> => {
+  try {
+    // Fetch all branches
+    const branchSnapshot = await getDocs(collection(db, 'Branches'));
+    const branches = new Map<string, string>();
+    branchSnapshot.docs.forEach(doc => {
+      branches.set(doc.id, doc.data().branchName);
+    });
+
+    // Fetch all executives
+    const execSnapshot = await getDocs(collection(db, 'executives'));
+    const executives = execSnapshot.docs.map(doc => ({
+      id: doc.id,
+      name: doc.data().name,
+      branchId: doc.data().branchId,
+    }));
+
+    if (executives.length === 0) return false;
+
+    // Fetch today's collections
+    const collectionsQuery = query(
+      collection(db, 'dailyCollections'),
+      where('date', '==', date)
+    );
+    const collectionsSnapshot = await getDocs(collectionsQuery);
+
+    // Map entries by executiveId
+    const entries = new Map<string, { targetQty: number; achQty: number }>();
+    collectionsSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      entries.set(data.executiveId, {
+        targetQty: data.targetQty || 0,
+        achQty: data.achQty || 0,
+      });
+    });
+
+    // Find executives with target but no ACH, or no entry at all
+    const noAch: { name: string; branch: string; target: number }[] = [];
+    const noEntry: { name: string; branch: string }[] = [];
+
+    executives.forEach(exec => {
+      const branchName = branches.get(exec.branchId) || 'Unknown';
+      const entry = entries.get(exec.id);
+
+      if (!entry) {
+        noEntry.push({ name: exec.name, branch: branchName });
+      } else if (entry.targetQty > 0 && entry.achQty === 0) {
+        noAch.push({ name: exec.name, branch: branchName, target: entry.targetQty });
+      }
+    });
+
+    // Sort A-Z by branch
+    noAch.sort((a, b) => a.branch.localeCompare(b.branch));
+    noEntry.sort((a, b) => a.branch.localeCompare(b.branch));
+
+    // Only send if there are missing entries
+    if (noAch.length === 0 && noEntry.length === 0) {
+      return true; // All good, no need to send
+    }
+
+    // Build message
+    let message = `🕘 <b>9 PM ACH Status</b>\n`;
+    message += `📅 ${date}\n\n`;
+
+    if (noAch.length > 0) {
+      message += `⚠️ <b>Target OK, NO ACH (${noAch.length})</b>\n`;
+      noAch.forEach(e => {
+        message += `   • ${e.name} (${e.branch}) - Target: ${e.target}\n`;
+      });
+      message += '\n';
+    }
+
+    if (noEntry.length > 0) {
+      message += `❌ <b>No Entry (${noEntry.length})</b>\n`;
+      noEntry.forEach(e => {
+        message += `   • ${e.name} (${e.branch})\n`;
+      });
+    }
+
+    return sendTelegramMessage(message);
+  } catch (error) {
+    console.error('Error sending missing ACH report:', error);
+    return false;
+  }
+};
