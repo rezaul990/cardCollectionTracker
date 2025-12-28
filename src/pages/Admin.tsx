@@ -36,6 +36,13 @@ interface BranchData {
   name: string;
 }
 
+interface WorkPlanStatus {
+  branchId: string;
+  branchName: string;
+  submitted: boolean;
+  remarks: string;
+}
+
 export default function Admin({ userEmail }: AdminProps) {
   const [branchList, setBranchList] = useState<BranchData[]>([]);
   const [branches, setBranches] = useState<Map<string, string>>(new Map());
@@ -50,6 +57,7 @@ export default function Admin({ userEmail }: AdminProps) {
   const [saving, setSaving] = useState(false);
   const [sendingTelegram, setSendingTelegram] = useState(false);
   const [last3DaysData, setLast3DaysData] = useState<CollectionRow[]>([]);
+  const [workPlanStatus, setWorkPlanStatus] = useState<WorkPlanStatus[]>([]);
 
   const fetchMasterData = async () => {
     try {
@@ -114,6 +122,38 @@ export default function Admin({ userEmail }: AdminProps) {
     }
   };
 
+  // Fetch today's work plan status
+  const fetchWorkPlanStatus = async (branchMap: Map<string, string>) => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const q = query(
+        collection(db, 'workPlans'),
+        where('date', '==', today)
+      );
+      const snapshot = await getDocs(q);
+      const workPlanMap = new Map<string, { submitted: boolean; remarks: string }>();
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        workPlanMap.set(data.branchId, { submitted: data.submitted, remarks: data.remarks || '' });
+      });
+
+      const statusList: WorkPlanStatus[] = [];
+      branchMap.forEach((name, id) => {
+        const wp = workPlanMap.get(id);
+        statusList.push({
+          branchId: id,
+          branchName: name,
+          submitted: wp?.submitted || false,
+          remarks: wp?.remarks || '',
+        });
+      });
+      statusList.sort((a, b) => a.branchName.localeCompare(b.branchName));
+      setWorkPlanStatus(statusList);
+    } catch (error) {
+      console.error('Error fetching work plan status:', error);
+    }
+  };
+
   const fetchCollections = async (branchMap: Map<string, string>, execMap: Map<string, string>) => {
     setLoading(true);
     try {
@@ -153,6 +193,7 @@ export default function Admin({ userEmail }: AdminProps) {
       if (branchMap.size > 0) {
         fetchCollections(branchMap, execMap);
         fetchLast3DaysData(branchMap, execMap);
+        fetchWorkPlanStatus(branchMap);
       } else {
         setLoading(false);
       }
@@ -280,6 +321,10 @@ export default function Admin({ userEmail }: AdminProps) {
   const enteredCount = branchSummary.filter(b => b.hasEntry).length;
   const notEnteredCount = branchSummary.filter(b => !b.hasEntry).length;
 
+  // Work Plan counts
+  const wpSubmittedCount = workPlanStatus.filter(w => w.submitted).length;
+  const wpNotSubmittedCount = workPlanStatus.filter(w => !w.submitted).length;
+
   // Filter collections by selected branch and sort by branch name A-Z
   const filteredCollections = (selectedBranch === 'all' 
     ? collections 
@@ -355,6 +400,37 @@ export default function Admin({ userEmail }: AdminProps) {
               {sendingTelegram ? 'Sending...' : 'Send to Telegram'}
             </button>
           </div>
+        </div>
+
+        {/* Work Plan Status Card */}
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">📋 Work Plan Status (Today)</h2>
+          <div className="flex gap-6 mb-3">
+            <div>
+              <span className="text-2xl font-bold text-green-600">{wpSubmittedCount}</span>
+              <p className="text-sm text-gray-500">Submitted</p>
+            </div>
+            <div>
+              <span className="text-2xl font-bold text-red-600">{wpNotSubmittedCount}</span>
+              <p className="text-sm text-gray-500">Not Submitted</p>
+            </div>
+          </div>
+          {wpNotSubmittedCount > 0 && (
+            <div className="mb-3">
+              <p className="text-sm text-gray-600">
+                <span className="font-medium text-red-600">Not Submitted:</span>{' '}
+                {workPlanStatus.filter(w => !w.submitted).map(w => w.branchName).join(', ')}
+              </p>
+            </div>
+          )}
+          {wpSubmittedCount > 0 && (
+            <div>
+              <p className="text-sm text-gray-600">
+                <span className="font-medium text-green-600">Submitted:</span>{' '}
+                {workPlanStatus.filter(w => w.submitted).map(w => w.branchName).join(', ')}
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Lowest 10 Performers - Last 3 Days */}

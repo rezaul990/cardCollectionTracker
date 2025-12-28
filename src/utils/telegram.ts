@@ -291,3 +291,75 @@ export const sendMissingAchReport = async (date: string): Promise<boolean> => {
     return false;
   }
 };
+
+
+// Send work plan status update - which branches submitted and which didn't
+export const sendWorkPlanStatusUpdate = async (date: string): Promise<boolean> => {
+  try {
+    // Fetch all branches
+    const branchSnapshot = await getDocs(collection(db, 'Branches'));
+    const branches = branchSnapshot.docs.map(doc => ({
+      id: doc.id,
+      name: doc.data().branchName,
+    }));
+
+    if (branches.length === 0) return false;
+
+    // Fetch today's work plans
+    const workPlansQuery = query(
+      collection(db, 'workPlans'),
+      where('date', '==', date)
+    );
+    const workPlansSnapshot = await getDocs(workPlansQuery);
+    
+    // Map work plans by branchId
+    const workPlanMap = new Map<string, boolean>();
+    workPlansSnapshot.docs.forEach(doc => {
+      const data = doc.data();
+      workPlanMap.set(data.branchId, data.submitted || false);
+    });
+
+    // Separate submitted and not submitted
+    const submitted: string[] = [];
+    const notSubmitted: string[] = [];
+
+    branches.forEach(branch => {
+      if (workPlanMap.get(branch.id) === true) {
+        submitted.push(branch.name);
+      } else {
+        notSubmitted.push(branch.name);
+      }
+    });
+
+    // Sort both lists A-Z
+    submitted.sort((a, b) => a.localeCompare(b));
+    notSubmitted.sort((a, b) => a.localeCompare(b));
+
+    // Build message
+    let message = `📋 <b>Work Plan Status Update</b>\n`;
+    message += `📅 ${date}\n\n`;
+
+    message += `✅ <b>Submitted (${submitted.length}/${branches.length})</b>\n`;
+    if (submitted.length === 0) {
+      message += `   None yet\n`;
+    } else {
+      submitted.forEach(name => {
+        message += `   ✔️ ${name}\n`;
+      });
+    }
+
+    message += `\n❌ <b>Not Submitted (${notSubmitted.length})</b>\n`;
+    if (notSubmitted.length === 0) {
+      message += `   ✨ All branches submitted!\n`;
+    } else {
+      notSubmitted.forEach(name => {
+        message += `   ⚠️ ${name}\n`;
+      });
+    }
+
+    return sendTelegramMessage(message);
+  } catch (error) {
+    console.error('Error sending work plan status:', error);
+    return false;
+  }
+};
