@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, query, where, getDocs, orderBy, updateDoc, deleteDoc, doc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
@@ -58,6 +58,26 @@ export default function Admin({ userEmail }: AdminProps) {
   const [sendingTelegram, setSendingTelegram] = useState(false);
   const [last3DaysData, setLast3DaysData] = useState<CollectionRow[]>([]);
   const [workPlanStatus, setWorkPlanStatus] = useState<WorkPlanStatus[]>([]);
+  const workPlanRef = useRef<HTMLDivElement>(null);
+
+  const handleScreenshot = async () => {
+    if (!workPlanRef.current) return;
+    try {
+      const domtoimage = await import('dom-to-image-more');
+      const { saveAs } = await import('file-saver');
+      
+      const blob = await domtoimage.toBlob(workPlanRef.current, {
+        bgcolor: '#ffffff',
+        quality: 1,
+        scale: 2,
+      });
+      
+      saveAs(blob, `WorkPlan_Report_${new Date().toISOString().split('T')[0]}.png`);
+    } catch (error) {
+      console.error('Screenshot error:', error);
+      alert('Failed to save image');
+    }
+  };
 
   const fetchMasterData = async () => {
     try {
@@ -431,6 +451,51 @@ export default function Admin({ userEmail }: AdminProps) {
               </p>
             </div>
           )}
+        </div>
+
+        {/* Work Plan Report Table */}
+        <div ref={workPlanRef} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 mb-6">
+          <div className="flex justify-between items-center mb-3">
+            <h2 className="text-lg font-semibold text-gray-900">📝 Manager Work Plan Report (Today)</h2>
+            <button
+              onClick={handleScreenshot}
+              className="px-3 py-1.5 bg-purple-600 text-white text-sm font-medium rounded-md hover:bg-purple-700 flex items-center gap-2"
+            >
+              📷 Screenshot
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">WhatsApp Submitted</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Remarks</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-200">
+                {workPlanStatus.length === 0 ? (
+                  <tr><td colSpan={4} className="px-4 py-4 text-center text-gray-500">No data available</td></tr>
+                ) : (
+                  workPlanStatus.map((wp, idx) => (
+                    <tr key={wp.branchId} className={!wp.submitted ? 'bg-red-50' : ''}>
+                      <td className="px-4 py-2 text-sm font-medium text-gray-900">{idx + 1}</td>
+                      <td className="px-4 py-2 text-sm text-gray-900">{wp.branchName}</td>
+                      <td className="px-4 py-2 text-sm">
+                        {wp.submitted ? (
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">✓ Yes</span>
+                        ) : (
+                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">✗ No</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-sm text-gray-600">{wp.remarks || '-'}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         {/* Lowest 10 Performers - Last 3 Days */}
