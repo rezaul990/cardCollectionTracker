@@ -58,7 +58,6 @@ export default function Admin({ userEmail }: AdminProps) {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({ target: '', ach: '', cash: '', remarks: '' });
-  const [saving, setSaving] = useState(false);
   const [sendingTelegram, setSendingTelegram] = useState(false);
   const [last3DaysData, setLast3DaysData] = useState<CollectionRow[]>([]);
   const [workPlanStatus, setWorkPlanStatus] = useState<WorkPlanStatus[]>([]);
@@ -133,10 +132,14 @@ export default function Admin({ userEmail }: AdminProps) {
           branchName: branchMap.get(d.branchId) || 'Unknown',
           executiveId: d.executiveId,
           executiveName: execMap.get(d.executiveId) || 'Unknown',
-          targetQty: d.targetQty || 0,
-          achQty: d.achQty || 0,
-          cashQty: d.cashQty || 0,
+          cardCollectionTarget: d.cardCollectionTarget || 0,
+          salesTarget: d.salesTarget || 0,
+          joripTarget: d.joripTarget || 0,
+          cardCollectionAch: d.cardCollectionAch || 0,
+          salesAch: d.salesAch || 0,
+          joripAch: d.joripAch || 0,
           remarks: d.remarks || '',
+          todaysWorkPlan: d.todaysWorkPlan || '',
           editHistory: d.editHistory || [],
         };
       });
@@ -261,13 +264,7 @@ export default function Admin({ userEmail }: AdminProps) {
     });
   };
 
-  const handleCancelEdit = () => {
-    setEditingId(null);
-    setEditForm({ target: '', ach: '', cash: '', remarks: '' });
-  };
-
   const handleSaveEdit = async (row: CollectionRow) => {
-    setSaving(true);
     try {
       const newTarget = parseInt(editForm.target) || 0;
       const newAch = parseInt(editForm.ach) || 0;
@@ -285,19 +282,17 @@ export default function Admin({ userEmail }: AdminProps) {
       }
 
       await updateDoc(doc(db, 'dailyCollections', row.id), {
-        cardCollectionTarget: newTarget, cardCollectionAch: newAch, cardCollectionTarget: newCash, remarks: editForm.remarks,
+        cardCollectionTarget: newTarget, cardCollectionAch: newAch, salesTarget: newCash, remarks: editForm.remarks,
         editHistory: newHistory, lastUpdated: serverTimestamp(),
       });
 
       setCollections(prev => prev.map(c =>
-        c.id === row.id ? { ...c, cardCollectionTarget: newTarget, cardCollectionAch: newAch, cardCollectionTarget: newCash, remarks: editForm.remarks, editHistory: newHistory } : c
+        c.id === row.id ? { ...c, cardCollectionTarget: newTarget, cardCollectionAch: newAch, salesTarget: newCash, remarks: editForm.remarks, editHistory: newHistory } : c
       ));
       setEditingId(null);
     } catch (error) {
       console.error('Error updating:', error);
       alert('Failed to update entry');
-    } finally {
-      setSaving(false);
     }
   };
 

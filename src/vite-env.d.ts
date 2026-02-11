@@ -9,3 +9,7 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv
 }
+
+declare module 'dom-to-image-more' {
+  export function toBlob(node: HTMLElement, options?: any): Promise<Blob>;
+}
