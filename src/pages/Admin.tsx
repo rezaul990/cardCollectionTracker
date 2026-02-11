@@ -254,9 +254,9 @@ export default function Admin({ userEmail }: AdminProps) {
   const handleEdit = (row: CollectionRow) => {
     setEditingId(row.id);
     setEditForm({
-      target: row.targetQty.toString(),
-      ach: row.achQty.toString(),
-      cash: row.cashQty.toString(),
+      target: row.cardCollectionTarget.toString(),
+      ach: row.cardCollectionAch.toString(),
+      cash: row.cardCollectionTarget.toString(),
       remarks: row.remarks,
     });
   };
@@ -274,23 +274,23 @@ export default function Admin({ userEmail }: AdminProps) {
       const newCash = parseInt(editForm.cash) || 0;
 
       const newHistory: EditHistory[] = [...(row.editHistory || [])];
-      if (row.targetQty !== newTarget) {
-        newHistory.push({ field: 'Target', oldValue: row.targetQty, newValue: newTarget, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
+      if (row.cardCollectionTarget !== newTarget) {
+        newHistory.push({ field: 'Target', oldValue: row.cardCollectionTarget, newValue: newTarget, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
       }
-      if (row.achQty !== newAch) {
-        newHistory.push({ field: 'ACH', oldValue: row.achQty, newValue: newAch, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
+      if (row.cardCollectionAch !== newAch) {
+        newHistory.push({ field: 'ACH', oldValue: row.cardCollectionAch, newValue: newAch, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
       }
-      if (row.cashQty !== newCash) {
-        newHistory.push({ field: 'Cash', oldValue: row.cashQty, newValue: newCash, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
+      if (row.cardCollectionTarget !== newCash) {
+        newHistory.push({ field: 'Cash', oldValue: row.cardCollectionTarget, newValue: newCash, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
       }
 
       await updateDoc(doc(db, 'dailyCollections', row.id), {
-        targetQty: newTarget, achQty: newAch, cashQty: newCash, remarks: editForm.remarks,
+        cardCollectionTarget: newTarget, cardCollectionAch: newAch, cardCollectionTarget: newCash, remarks: editForm.remarks,
         editHistory: newHistory, lastUpdated: serverTimestamp(),
       });
 
       setCollections(prev => prev.map(c =>
-        c.id === row.id ? { ...c, targetQty: newTarget, achQty: newAch, cashQty: newCash, remarks: editForm.remarks, editHistory: newHistory } : c
+        c.id === row.id ? { ...c, cardCollectionTarget: newTarget, cardCollectionAch: newAch, cardCollectionTarget: newCash, remarks: editForm.remarks, editHistory: newHistory } : c
       ));
       setEditingId(null);
     } catch (error) {
@@ -314,9 +314,9 @@ export default function Admin({ userEmail }: AdminProps) {
 
   const handleExport = () => {
     const exportData = filteredCollections.map(row => {
-      const balance = row.targetQty - row.achQty;
-      const achievementPercent = row.targetQty > 0 ? (row.achQty / row.targetQty) * 100 : 0;
-      return { date: row.date, branchName: row.branchName, executiveName: row.executiveName, targetQty: row.targetQty, achQty: row.achQty, cashQty: row.cashQty, balance, achievementPercent };
+      const balance = row.cardCollectionTarget - row.cardCollectionAch;
+      const achievementPercent = row.cardCollectionTarget > 0 ? (row.cardCollectionAch / row.cardCollectionTarget) * 100 : 0;
+      return { date: row.date, branchName: row.branchName, executiveName: row.executiveName, targetQty: row.cardCollectionTarget, achQty: row.cardCollectionAch, cashQty: row.cardCollectionTarget, balance, achievementPercent };
     });
     const branchName = selectedBranch === 'all' ? '' : `_${branchList.find(b => b.id === selectedBranch)?.name || ''}`;
     const filename = startDate === endDate ? `Daily_Collection${branchName}_${startDate}` : `Collection${branchName}_${startDate}_to_${endDate}`;
@@ -330,8 +330,8 @@ export default function Admin({ userEmail }: AdminProps) {
     
     return branchList.map(branch => {
       const branchEntries = todayCollections.filter(c => c.branchId === branch.id);
-      const totalTarget = branchEntries.reduce((sum, e) => sum + e.targetQty, 0);
-      const totalAch = branchEntries.reduce((sum, e) => sum + e.achQty, 0);
+      const totalTarget = branchEntries.reduce((sum, e) => sum + e.cardCollectionTarget, 0);
+      const totalAch = branchEntries.reduce((sum, e) => sum + e.cardCollectionAch, 0);
       return {
         branchName: branch.name,
         hasEntry: branchEntries.length > 0,
@@ -382,8 +382,8 @@ export default function Admin({ userEmail }: AdminProps) {
       execStats.set(key, {
         name: row.executiveName,
         branch: row.branchName,
-        totalTarget: current.totalTarget + row.targetQty,
-        totalAch: current.totalAch + row.achQty,
+        totalTarget: current.totalTarget + row.cardCollectionTarget,
+        totalAch: current.totalAch + row.cardCollectionAch,
         days: current.days + 1,
       });
     });

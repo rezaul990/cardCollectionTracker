@@ -127,7 +127,6 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
   
   const totalTarget = totalCardTarget + totalSalesTarget + totalJoripTarget;
   const totalAch = totalCardAch + totalSalesAch + totalJoripAch;
-  const balance = totalTarget - totalAch;
   const achievementPercent = totalTarget > 0 ? (totalAch / totalTarget) * 100 : 0;
 
   if (loading) {
