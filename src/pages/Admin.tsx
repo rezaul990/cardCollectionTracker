@@ -56,8 +56,6 @@ export default function Admin({ userEmail }: AdminProps) {
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [loading, setLoading] = useState(true);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editForm, setEditForm] = useState({ target: '', ach: '', cash: '', remarks: '' });
   const [sendingTelegram, setSendingTelegram] = useState(false);
   const [last3DaysData, setLast3DaysData] = useState<CollectionRow[]>([]);
   const [workPlanStatus, setWorkPlanStatus] = useState<WorkPlanStatus[]>([]);
@@ -253,48 +251,6 @@ export default function Admin({ userEmail }: AdminProps) {
       fetchCollections(branches, executives);
     }
   }, [startDate, endDate]);
-
-  const handleEdit = (row: CollectionRow) => {
-    setEditingId(row.id);
-    setEditForm({
-      target: row.cardCollectionTarget.toString(),
-      ach: row.cardCollectionAch.toString(),
-      cash: row.cardCollectionTarget.toString(),
-      remarks: row.remarks,
-    });
-  };
-
-  const handleSaveEdit = async (row: CollectionRow) => {
-    try {
-      const newTarget = parseInt(editForm.target) || 0;
-      const newAch = parseInt(editForm.ach) || 0;
-      const newCash = parseInt(editForm.cash) || 0;
-
-      const newHistory: EditHistory[] = [...(row.editHistory || [])];
-      if (row.cardCollectionTarget !== newTarget) {
-        newHistory.push({ field: 'Target', oldValue: row.cardCollectionTarget, newValue: newTarget, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
-      }
-      if (row.cardCollectionAch !== newAch) {
-        newHistory.push({ field: 'ACH', oldValue: row.cardCollectionAch, newValue: newAch, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
-      }
-      if (row.cardCollectionTarget !== newCash) {
-        newHistory.push({ field: 'Cash', oldValue: row.cardCollectionTarget, newValue: newCash, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
-      }
-
-      await updateDoc(doc(db, 'dailyCollections', row.id), {
-        cardCollectionTarget: newTarget, cardCollectionAch: newAch, salesTarget: newCash, remarks: editForm.remarks,
-        editHistory: newHistory, lastUpdated: serverTimestamp(),
-      });
-
-      setCollections(prev => prev.map(c =>
-        c.id === row.id ? { ...c, cardCollectionTarget: newTarget, cardCollectionAch: newAch, salesTarget: newCash, remarks: editForm.remarks, editHistory: newHistory } : c
-      ));
-      setEditingId(null);
-    } catch (error) {
-      console.error('Error updating:', error);
-      alert('Failed to update entry');
-    }
-  };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this entry?')) return;
@@ -608,9 +564,8 @@ export default function Admin({ userEmail }: AdminProps) {
                     const totalTarget = row.cardCollectionTarget + row.salesTarget + row.joripTarget;
                     const totalAch = row.cardCollectionAch + row.salesAch + row.joripAch;
                     const percent = totalTarget > 0 ? (totalAch / totalTarget) * 100 : 0;
-                    const isEditing = editingId === row.id;
                     return (
-                      <tr key={row.id} className={isEditing ? 'bg-yellow-50' : ''}>
+                      <tr key={row.id}>
                         <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.date}</td>
                         <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.branchName}</td>
                         <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.executiveName}</td>
@@ -634,7 +589,6 @@ export default function Admin({ userEmail }: AdminProps) {
                         </td>
                         <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-sm">
                           <div className="flex gap-1">
-                            <button onClick={() => handleEdit(row)} className="text-blue-600 hover:text-blue-800 text-xs">Edit</button>
                             <button onClick={() => handleDelete(row.id)} className="text-red-600 hover:text-red-800 text-xs">Del</button>
                           </div>
                         </td>
