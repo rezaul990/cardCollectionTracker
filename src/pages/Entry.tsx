@@ -11,7 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
-import { sendEntryNotification, sendBranchStatusUpdate, isAfter9PM, sendMissingAchReport, sendWorkPlanStatusUpdate } from '../utils/telegram';
+import { sendBranchStatusUpdate, isAfter9PM, sendMissingAchReport, sendWorkPlanStatusUpdate } from '../utils/telegram';
 
 interface EntryProps {
   userEmail: string;
@@ -24,27 +24,21 @@ interface Executive {
   name: string;
 }
 
-interface EditHistory {
-  field: string;
-  oldValue: number;
-  newValue: number;
-  editedAt: Date;
-  editedBy: string;
-}
-
 interface EntryData {
   docId: string;
   executiveId: string;
-  targetQty: number;
-  achQty: number;
-  cashQty: number;
+  cardCollectionTarget: number;
+  salesTarget: number;
+  joripTarget: number;
+  todaysWorkPlan: string;
+  cardCollectionAch: number;
+  salesAch: number;
+  joripAch: number;
   remarks: string;
-  editHistory?: EditHistory[];
 }
 
 interface WorkPlanData {
   docId?: string;
-  submitted: boolean;
   remarks: string;
 }
 
@@ -52,14 +46,22 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
   const [date] = useState(new Date().toISOString().split('T')[0]);
   const [executives, setExecutives] = useState<Executive[]>([]);
   const [entries, setEntries] = useState<Map<string, EntryData>>(new Map());
-  const [formData, setFormData] = useState<Map<string, { target: string; ach: string; cash: string; remarks: string }>>(new Map());
+  const [formData, setFormData] = useState<Map<string, { 
+    cardCollectionTarget: string; 
+    salesTarget: string; 
+    joripTarget: string; 
+    todaysWorkPlan: string;
+    cardCollectionAch: string; 
+    salesAch: string; 
+    joripAch: string; 
+    remarks: string 
+  }>>(new Map());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [message, setMessage] = useState({ type: '', text: '', execId: '' });
-  const [showHistory, setShowHistory] = useState<string | null>(null);
   
   // Work Plan state
-  const [workPlan, setWorkPlan] = useState<WorkPlanData>({ submitted: false, remarks: '' });
+  const [workPlan, setWorkPlan] = useState<WorkPlanData>({ remarks: '' });
   const [savingWorkPlan, setSavingWorkPlan] = useState(false);
   const [workPlanMessage, setWorkPlanMessage] = useState({ type: '', text: '' });
 
@@ -86,23 +88,39 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
         );
         const entrySnapshot = await getDocs(entryQuery);
         const entryMap = new Map<string, EntryData>();
-        const formMap = new Map<string, { target: string; ach: string; cash: string; remarks: string }>();
+        const formMap = new Map<string, { 
+          cardCollectionTarget: string; 
+          salesTarget: string; 
+          joripTarget: string; 
+          todaysWorkPlan: string;
+          cardCollectionAch: string; 
+          salesAch: string; 
+          joripAch: string; 
+          remarks: string 
+        }>();
 
         entrySnapshot.docs.forEach((doc) => {
           const data = doc.data();
           entryMap.set(data.executiveId, {
             docId: doc.id,
             executiveId: data.executiveId,
-            targetQty: data.targetQty || 0,
-            achQty: data.achQty || 0,
-            cashQty: data.cashQty || 0,
+            cardCollectionTarget: data.cardCollectionTarget || 0,
+            salesTarget: data.salesTarget || 0,
+            joripTarget: data.joripTarget || 0,
+            todaysWorkPlan: data.todaysWorkPlan || '',
+            cardCollectionAch: data.cardCollectionAch || 0,
+            salesAch: data.salesAch || 0,
+            joripAch: data.joripAch || 0,
             remarks: data.remarks || '',
-            editHistory: data.editHistory || [],
           });
           formMap.set(data.executiveId, {
-            target: (data.targetQty || 0).toString(),
-            ach: (data.achQty || 0).toString(),
-            cash: (data.cashQty || 0).toString(),
+            cardCollectionTarget: (data.cardCollectionTarget || 0).toString(),
+            salesTarget: (data.salesTarget || 0).toString(),
+            joripTarget: (data.joripTarget || 0).toString(),
+            todaysWorkPlan: data.todaysWorkPlan || '',
+            cardCollectionAch: (data.cardCollectionAch || 0).toString(),
+            salesAch: (data.salesAch || 0).toString(),
+            joripAch: (data.joripAch || 0).toString(),
             remarks: data.remarks || '',
           });
         });
@@ -110,7 +128,16 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
         // Initialize form data for executives without entries
         execList.forEach((exec) => {
           if (!formMap.has(exec.id)) {
-            formMap.set(exec.id, { target: '', ach: '', cash: '', remarks: '' });
+            formMap.set(exec.id, { 
+              cardCollectionTarget: '', 
+              salesTarget: '', 
+              joripTarget: '', 
+              todaysWorkPlan: '',
+              cardCollectionAch: '', 
+              salesAch: '', 
+              joripAch: '', 
+              remarks: '' 
+            });
           }
         });
 
@@ -129,7 +156,6 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
           const wpData = wpDoc.data();
           setWorkPlan({
             docId: wpDoc.id,
-            submitted: wpData.submitted || false,
             remarks: wpData.remarks || '',
           });
         }
@@ -146,7 +172,7 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
   const updateFormField = (execId: string, field: string, value: string) => {
     setFormData((prev) => {
       const newMap = new Map(prev);
-      const current = newMap.get(execId) || { target: '', ach: '', cash: '', remarks: '' };
+      const current = newMap.get(execId) || { cardCollectionTarget: '', salesTarget: '', joripTarget: '', todaysWorkPlan: '', cardCollectionAch: '', salesAch: '', joripAch: '', remarks: '' };
       newMap.set(execId, { ...current, [field]: value });
       return newMap;
     });
@@ -159,81 +185,60 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
     const form = formData.get(execId);
     if (!form) return;
 
-    const newTarget = parseInt(form.target) || 0;
-    const newAch = parseInt(form.ach) || 0;
-    const newCash = parseInt(form.cash) || 0;
+    const newCardCollectionTarget = parseInt(form.cardCollectionTarget) || 0;
+    const newSalesTarget = parseInt(form.salesTarget) || 0;
+    const newJoripTarget = parseInt(form.joripTarget) || 0;
+    const newCardCollectionAch = parseInt(form.cardCollectionAch) || 0;
+    const newSalesAch = parseInt(form.salesAch) || 0;
+    const newJoripAch = parseInt(form.joripAch) || 0;
 
     try {
       const existing = entries.get(execId);
       
       if (existing) {
-        // Build edit history for changed fields
-        const newHistory: EditHistory[] = [...(existing.editHistory || [])];
-        
-        if (existing.targetQty !== newTarget && existing.targetQty > 0) {
-          newHistory.push({
-            field: 'Target',
-            oldValue: existing.targetQty,
-            newValue: newTarget,
-            editedAt: new Date(),
-            editedBy: userEmail,
-          });
-        }
-        if (existing.achQty !== newAch && existing.achQty > 0) {
-          newHistory.push({
-            field: 'ACH',
-            oldValue: existing.achQty,
-            newValue: newAch,
-            editedAt: new Date(),
-            editedBy: userEmail,
-          });
-        }
-        if (existing.cashQty !== newCash && existing.cashQty > 0) {
-          newHistory.push({
-            field: 'Cash',
-            oldValue: existing.cashQty,
-            newValue: newCash,
-            editedAt: new Date(),
-            editedBy: userEmail,
-          });
-        }
-
         await updateDoc(doc(db, 'dailyCollections', existing.docId), {
           branchId,
           executiveId: execId,
           date,
-          targetQty: newTarget,
-          achQty: newAch,
-          cashQty: newCash,
+          cardCollectionTarget: newCardCollectionTarget,
+          salesTarget: newSalesTarget,
+          joripTarget: newJoripTarget,
+          todaysWorkPlan: form.todaysWorkPlan,
+          cardCollectionAch: newCardCollectionAch,
+          salesAch: newSalesAch,
+          joripAch: newJoripAch,
           remarks: form.remarks,
-          editHistory: newHistory,
           lastUpdated: serverTimestamp(),
         });
 
-        // Update local state
         setEntries((prev) => {
           const newMap = new Map(prev);
           newMap.set(execId, {
             ...existing,
-            targetQty: newTarget,
-            achQty: newAch,
-            cashQty: newCash,
+            cardCollectionTarget: newCardCollectionTarget,
+            salesTarget: newSalesTarget,
+            joripTarget: newJoripTarget,
+            todaysWorkPlan: form.todaysWorkPlan,
+            cardCollectionAch: newCardCollectionAch,
+            salesAch: newSalesAch,
+            joripAch: newJoripAch,
             remarks: form.remarks,
-            editHistory: newHistory,
           });
           return newMap;
         });
       } else {
-        // Create new entry
         const docRef = await addDoc(collection(db, 'dailyCollections'), {
           branchId,
           executiveId: execId,
           date,
-          targetQty: newTarget,
-          achQty: newAch,
-          cashQty: newCash,
+          cardCollectionTarget: newCardCollectionTarget,
+          salesTarget: newSalesTarget,
+          joripTarget: newJoripTarget,
+          todaysWorkPlan: form.todaysWorkPlan,
+          cardCollectionAch: newCardCollectionAch,
+          salesAch: newSalesAch,
+          joripAch: newJoripAch,
           remarks: form.remarks,
-          editHistory: [],
           createdAt: serverTimestamp(),
         });
         
@@ -242,32 +247,22 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
           newMap.set(execId, {
             docId: docRef.id,
             executiveId: execId,
-            targetQty: newTarget,
-            achQty: newAch,
-            cashQty: newCash,
+            cardCollectionTarget: newCardCollectionTarget,
+            salesTarget: newSalesTarget,
+            joripTarget: newJoripTarget,
+            todaysWorkPlan: form.todaysWorkPlan,
+            cardCollectionAch: newCardCollectionAch,
+            salesAch: newSalesAch,
+            joripAch: newJoripAch,
             remarks: form.remarks,
-            editHistory: [],
           });
           return newMap;
         });
       }
-      // Send Telegram notification
-      const execName = executives.find(e => e.id === execId)?.name || 'Unknown';
-      sendEntryNotification({
-        branchName,
-        executiveName: execName,
-        date,
-        targetQty: newTarget,
-        achQty: newAch,
-        cashQty: newCash,
-        isUpdate: !!existing,
-      });
 
-      // Send branch status update (which branches entered/not entered)
       sendBranchStatusUpdate(date);
 
-      // After 9 PM, send missing ACH report when someone enters ACH
-      if (isAfter9PM() && newAch > 0) {
+      if (isAfter9PM() && (newCardCollectionAch > 0 || newSalesAch > 0 || newJoripAch > 0)) {
         sendMissingAchReport(date);
       }
 
@@ -280,16 +275,6 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
     }
   };
 
-  const formatDateTime = (date: Date | { toDate: () => Date }) => {
-    const d = date instanceof Date ? date : date.toDate();
-    return d.toLocaleString('en-US', { 
-      month: 'short', 
-      day: 'numeric', 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  };
-
   const handleSaveWorkPlan = async () => {
     setSavingWorkPlan(true);
     setWorkPlanMessage({ type: '', text: '' });
@@ -297,7 +282,6 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
     try {
       if (workPlan.docId) {
         await updateDoc(doc(db, 'workPlans', workPlan.docId), {
-          submitted: workPlan.submitted,
           remarks: workPlan.remarks,
           lastUpdated: serverTimestamp(),
         });
@@ -305,14 +289,12 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
         const docRef = await addDoc(collection(db, 'workPlans'), {
           branchId,
           date,
-          submitted: workPlan.submitted,
           remarks: workPlan.remarks,
           createdAt: serverTimestamp(),
         });
         setWorkPlan(prev => ({ ...prev, docId: docRef.id }));
       }
 
-      // Send work plan status update to Telegram
       sendWorkPlanStatusUpdate(date);
 
       setWorkPlanMessage({ type: 'success', text: 'Work Plan saved!' });
@@ -349,89 +331,130 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
             <p className="text-gray-500">No executives added yet. Go to Executives page to add them first.</p>
           </div>
         ) : (
-          <div className="space-y-4">
-            {executives.map((exec) => {
-              const form = formData.get(exec.id) || { target: '', ach: '', cash: '', remarks: '' };
-              const existing = entries.get(exec.id);
-              const hasHistory = existing?.editHistory && existing.editHistory.length > 0;
-              
-              return (
-                <div key={exec.id} className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
-                  <div className="flex flex-wrap items-center gap-4">
-                    <div className="w-40">
-                      <span className="font-medium text-gray-900">{exec.name}</span>
-                      {hasHistory && (
-                        <button
-                          onClick={() => setShowHistory(showHistory === exec.id ? null : exec.id)}
-                          className="ml-2 text-xs text-orange-600 hover:text-orange-800"
-                        >
-                          (edited)
-                        </button>
-                      )}
-                    </div>
-                    <input
-                      type="number"
-                      placeholder="Target"
-                      value={form.target}
-                      onChange={(e) => updateFormField(exec.id, 'target', e.target.value)}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                    <input
-                      type="number"
-                      placeholder="ACH"
-                      value={form.ach}
-                      onChange={(e) => updateFormField(exec.id, 'ach', e.target.value)}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                    <input
-                      type="number"
-                      placeholder="Cash"
-                      value={form.cash}
-                      onChange={(e) => updateFormField(exec.id, 'cash', e.target.value)}
-                      className="w-24 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                    <input
-                      type="text"
-                      placeholder="Remarks"
-                      value={form.remarks}
-                      onChange={(e) => updateFormField(exec.id, 'remarks', e.target.value)}
-                      className="flex-1 min-w-32 px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                    <button
-                      onClick={() => handleSave(exec.id)}
-                      disabled={saving === exec.id}
-                      className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {saving === exec.id ? '...' : existing ? 'Update' : 'Save'}
-                    </button>
-                    {message.execId === exec.id && (
-                      <span className={`text-sm ${message.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
-                        {message.text}
-                      </span>
-                    )}
-                  </div>
+          <div className="space-y-6">
+            {/* Morning Entry Section */}
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 mb-4">🌅 Morning Entry</h2>
+              <div className="space-y-3">
+                {executives.map((exec) => {
+                  const form = formData.get(exec.id) || { cardCollectionTarget: '', salesTarget: '', joripTarget: '', todaysWorkPlan: '', cardCollectionAch: '', salesAch: '', joripAch: '', remarks: '' };
                   
-                  {/* Edit History */}
-                  {showHistory === exec.id && hasHistory && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
-                      <p className="text-xs font-medium text-gray-500 mb-2">Edit History:</p>
-                      <div className="space-y-1">
-                        {existing?.editHistory?.map((edit, idx) => (
-                          <div key={idx} className="text-xs text-gray-600 bg-orange-50 px-2 py-1 rounded">
-                            <span className="font-medium">{edit.field}</span> changed from{' '}
-                            <span className="text-red-600 line-through">{edit.oldValue}</span> to{' '}
-                            <span className="text-green-600 font-medium">{edit.newValue}</span>
-                            <span className="text-gray-400 ml-2">
-                              • {formatDateTime(edit.editedAt)} by {edit.editedBy}
-                            </span>
-                          </div>
-                        ))}
+                  return (
+                    <div key={`morning-${exec.id}`} className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-4">
+                      <div className="mb-3">
+                        <span className="font-medium text-gray-900 text-sm sm:text-base">{exec.name}</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                        <input
+                          type="number"
+                          placeholder="Card"
+                          value={form.cardCollectionTarget}
+                          onChange={(e) => updateFormField(exec.id, 'cardCollectionTarget', e.target.value)}
+                          className="px-2 py-2 border border-gray-300 rounded-md text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Sales"
+                          value={form.salesTarget}
+                          onChange={(e) => updateFormField(exec.id, 'salesTarget', e.target.value)}
+                          className="px-2 py-2 border border-gray-300 rounded-md text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Jorip"
+                          value={form.joripTarget}
+                          onChange={(e) => updateFormField(exec.id, 'joripTarget', e.target.value)}
+                          className="px-2 py-2 border border-gray-300 rounded-md text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Plan"
+                          value={form.todaysWorkPlan}
+                          onChange={(e) => updateFormField(exec.id, 'todaysWorkPlan', e.target.value)}
+                          className="col-span-2 sm:col-span-1 px-2 py-2 border border-gray-300 rounded-md text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSave(exec.id)}
+                          disabled={saving === exec.id}
+                          className="flex-1 px-3 py-2 bg-blue-600 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-blue-700 disabled:opacity-50"
+                        >
+                          {saving === exec.id ? '...' : 'Save'}
+                        </button>
+                        {message.execId === exec.id && (
+                          <span className={`text-xs sm:text-sm ${message.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                            {message.text}
+                          </span>
+                        )}
                       </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Evening Entry Section */}
+            <div>
+              <h2 className="text-lg font-bold text-gray-900 mb-4">🌆 Evening Entry</h2>
+              <div className="space-y-3">
+                {executives.map((exec) => {
+                  const form = formData.get(exec.id) || { cardCollectionTarget: '', salesTarget: '', joripTarget: '', todaysWorkPlan: '', cardCollectionAch: '', salesAch: '', joripAch: '', remarks: '' };
+                  
+                  return (
+                    <div key={`evening-${exec.id}`} className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-4">
+                      <div className="mb-3">
+                        <span className="font-medium text-gray-900 text-sm sm:text-base">{exec.name}</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+                        <input
+                          type="number"
+                          placeholder="Card"
+                          value={form.cardCollectionAch}
+                          onChange={(e) => updateFormField(exec.id, 'cardCollectionAch', e.target.value)}
+                          className="px-2 py-2 border border-gray-300 rounded-md text-xs sm:text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Sales"
+                          value={form.salesAch}
+                          onChange={(e) => updateFormField(exec.id, 'salesAch', e.target.value)}
+                          className="px-2 py-2 border border-gray-300 rounded-md text-xs sm:text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                        />
+                        <input
+                          type="number"
+                          placeholder="Jorip"
+                          value={form.joripAch}
+                          onChange={(e) => updateFormField(exec.id, 'joripAch', e.target.value)}
+                          className="px-2 py-2 border border-gray-300 rounded-md text-xs sm:text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                        />
+                        <input
+                          type="text"
+                          placeholder="Report"
+                          value={form.remarks}
+                          onChange={(e) => updateFormField(exec.id, 'remarks', e.target.value)}
+                          className="col-span-2 sm:col-span-1 px-2 py-2 border border-gray-300 rounded-md text-xs sm:text-sm focus:ring-2 focus:ring-green-500 outline-none"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleSave(exec.id)}
+                          disabled={saving === exec.id}
+                          className="flex-1 px-3 py-2 bg-green-600 text-white text-xs sm:text-sm font-medium rounded-md hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {saving === exec.id ? '...' : 'Save'}
+                        </button>
+                        {message.execId === exec.id && (
+                          <span className={`text-xs sm:text-sm ${message.type === 'success' ? 'text-green-600' : 'text-red-600'}`}>
+                            {message.text}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
@@ -442,34 +465,7 @@ export default function Entry({ userEmail, branchId, branchName }: EntryProps) {
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Work Plan Submitted on WhatsApp
-                </label>
-                <div className="flex gap-4">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="workPlanSubmitted"
-                      checked={workPlan.submitted === true}
-                      onChange={() => setWorkPlan(prev => ({ ...prev, submitted: true }))}
-                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">Yes</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="workPlanSubmitted"
-                      checked={workPlan.submitted === false}
-                      onChange={() => setWorkPlan(prev => ({ ...prev, submitted: false }))}
-                      className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
-                    />
-                    <span className="ml-2 text-sm text-gray-700">No</span>
-                  </label>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Remarks (Work Plan Details)
+                  Work Plan Details
                 </label>
                 <textarea
                   value={workPlan.remarks}

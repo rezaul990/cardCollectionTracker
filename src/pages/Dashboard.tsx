@@ -15,9 +15,12 @@ interface DashboardProps {
 interface DailyEntry {
   executiveId: string;
   executiveName: string;
-  targetQty: number;
-  achQty: number;
-  cashQty: number;
+  cardCollectionTarget: number;
+  salesTarget: number;
+  joripTarget: number;
+  cardCollectionAch: number;
+  salesAch: number;
+  joripAch: number;
 }
 
 export default function Dashboard({ userEmail, branchId, branchName }: DashboardProps) {
@@ -55,9 +58,12 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
           return {
             executiveId: d.executiveId,
             executiveName: execNames.get(d.executiveId) || execMap.get(d.executiveId) || 'Unknown',
-            targetQty: d.targetQty || 0,
-            achQty: d.achQty || 0,
-            cashQty: d.cashQty || 0,
+            cardCollectionTarget: d.cardCollectionTarget || 0,
+            salesTarget: d.salesTarget || 0,
+            joripTarget: d.joripTarget || 0,
+            cardCollectionAch: d.cardCollectionAch || 0,
+            salesAch: d.salesAch || 0,
+            joripAch: d.joripAch || 0,
           };
         });
         setTodayData(data);
@@ -81,11 +87,13 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
         last3Snapshot.docs.forEach(doc => {
           const d = doc.data();
           const key = d.executiveId;
+          const totalTarget = (d.cardCollectionTarget || 0) + (d.salesTarget || 0) + (d.joripTarget || 0);
+          const totalAch = (d.cardCollectionAch || 0) + (d.salesAch || 0) + (d.joripAch || 0);
           const current = execStats.get(key) || { name: execMap.get(d.executiveId) || 'Unknown', totalTarget: 0, totalAch: 0 };
           execStats.set(key, {
             name: current.name,
-            totalTarget: current.totalTarget + (d.targetQty || 0),
-            totalAch: current.totalAch + (d.achQty || 0),
+            totalTarget: current.totalTarget + totalTarget,
+            totalAch: current.totalAch + totalAch,
           });
         });
 
@@ -110,9 +118,15 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
   }, [branchId, today]);
 
   // Calculate totals
-  const totalTarget = todayData.reduce((sum, d) => sum + d.targetQty, 0);
-  const totalAch = todayData.reduce((sum, d) => sum + d.achQty, 0);
-  const totalCash = todayData.reduce((sum, d) => sum + d.cashQty, 0);
+  const totalCardTarget = todayData.reduce((sum, d) => sum + d.cardCollectionTarget, 0);
+  const totalSalesTarget = todayData.reduce((sum, d) => sum + d.salesTarget, 0);
+  const totalJoripTarget = todayData.reduce((sum, d) => sum + d.joripTarget, 0);
+  const totalCardAch = todayData.reduce((sum, d) => sum + d.cardCollectionAch, 0);
+  const totalSalesAch = todayData.reduce((sum, d) => sum + d.salesAch, 0);
+  const totalJoripAch = todayData.reduce((sum, d) => sum + d.joripAch, 0);
+  
+  const totalTarget = totalCardTarget + totalSalesTarget + totalJoripTarget;
+  const totalAch = totalCardAch + totalSalesAch + totalJoripAch;
   const balance = totalTarget - totalAch;
   const achievementPercent = totalTarget > 0 ? (totalAch / totalTarget) * 100 : 0;
 
@@ -137,11 +151,18 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
         </div>
 
         {/* Summary Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-2 sm:gap-4 mb-8">
+          <StatCard title="Card Target" value={totalCardTarget} />
+          <StatCard title="Sales Target" value={totalSalesTarget} />
+          <StatCard title="Jorip Target" value={totalJoripTarget} />
+          <StatCard title="Card Ach" value={totalCardAch} />
+          <StatCard title="Sales Ach" value={totalSalesAch} />
+          <StatCard title="Jorip Ach" value={totalJoripAch} />
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-4 mb-8">
           <StatCard title="Total Target" value={totalTarget} />
           <StatCard title="Total ACH" value={totalAch} />
-          <StatCard title="Total Cash" value={totalCash} />
-          <StatCard title="Balance" value={balance} colorClass={balance > 0 ? 'text-red-600' : 'text-green-600'} />
           <StatCard
             title="Achievement"
             value={`${achievementPercent.toFixed(1)}%`}
@@ -177,36 +198,41 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
             <h2 className="text-lg font-semibold text-gray-900">Today's Executive Performance</h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 text-xs sm:text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Executive</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ACH</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cash</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Achievement</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Executive</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Card T</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sales T</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jorip T</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Card A</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sales A</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jorip A</th>
+                  <th className="px-3 sm:px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">%</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {todayData.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-4 text-center text-gray-500">No entries for today</td>
+                    <td colSpan={8} className="px-3 sm:px-6 py-4 text-center text-gray-500">No entries for today</td>
                   </tr>
                 ) : (
                   todayData.map((row) => {
-                    const rowBalance = row.targetQty - row.achQty;
-                    const rowPercent = row.targetQty > 0 ? (row.achQty / row.targetQty) * 100 : 0;
+                    const rowTotal = row.cardCollectionTarget + row.salesTarget + row.joripTarget;
+                    const rowAch = row.cardCollectionAch + row.salesAch + row.joripAch;
+                    const rowPercent = rowTotal > 0 ? (rowAch / rowTotal) * 100 : 0;
                     return (
                       <tr key={row.executiveId}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{row.executiveName}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.targetQty}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.achQty}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{row.cashQty}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{rowBalance}</td>
-                        <td className="px-6 py-4 whitespace-nowrap">
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap font-medium text-gray-900">{row.executiveName}</td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-gray-900">{row.cardCollectionTarget}</td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-gray-900">{row.salesTarget}</td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-gray-900">{row.joripTarget}</td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-gray-900">{row.cardCollectionAch}</td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-gray-900">{row.salesAch}</td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap text-gray-900">{row.joripAch}</td>
+                        <td className="px-3 sm:px-6 py-4 whitespace-nowrap">
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAchievementBgColor(rowPercent)}`}>
-                            {rowPercent.toFixed(1)}%
+                            {rowPercent.toFixed(0)}%
                           </span>
                         </td>
                       </tr>

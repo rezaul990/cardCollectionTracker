@@ -24,10 +24,15 @@ interface CollectionRow {
   branchName: string;
   executiveId: string;
   executiveName: string;
-  targetQty: number;
-  achQty: number;
-  cashQty: number;
+  cardCollectionTarget: number;
+  salesTarget: number;
+  joripTarget: number;
+  cardCollectionAch: number;
+  salesAch: number;
+  joripAch: number;
   remarks: string;
+  todaysWorkPlan: string;
+  managerWorkPlanRemarks?: string;
   editHistory?: EditHistory[];
 }
 
@@ -39,7 +44,6 @@ interface BranchData {
 interface WorkPlanStatus {
   branchId: string;
   branchName: string;
-  submitted: boolean;
   remarks: string;
 }
 
@@ -151,20 +155,19 @@ export default function Admin({ userEmail }: AdminProps) {
         where('date', '==', today)
       );
       const snapshot = await getDocs(q);
-      const workPlanMap = new Map<string, { submitted: boolean; remarks: string }>();
+      const workPlanMap = new Map<string, string>();
       snapshot.docs.forEach(doc => {
         const data = doc.data();
-        workPlanMap.set(data.branchId, { submitted: data.submitted, remarks: data.remarks || '' });
+        workPlanMap.set(data.branchId, data.remarks || '');
       });
 
       const statusList: WorkPlanStatus[] = [];
       branchMap.forEach((name, id) => {
-        const wp = workPlanMap.get(id);
+        const remarks = workPlanMap.get(id);
         statusList.push({
           branchId: id,
           branchName: name,
-          submitted: wp?.submitted || false,
-          remarks: wp?.remarks || '',
+          remarks: remarks || '',
         });
       });
       statusList.sort((a, b) => a.branchName.localeCompare(b.branchName));
@@ -184,8 +187,25 @@ export default function Admin({ userEmail }: AdminProps) {
         orderBy('date', 'desc')
       );
       const snapshot = await getDocs(q);
+      
+      // Fetch all work plans for the date range
+      const wpQuery = query(
+        collection(db, 'workPlans'),
+        where('date', '>=', startDate),
+        where('date', '<=', endDate)
+      );
+      const wpSnapshot = await getDocs(wpQuery);
+      const workPlanMap = new Map<string, string>();
+      wpSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const key = `${data.branchId}_${data.date}`;
+        workPlanMap.set(key, data.remarks || '');
+      });
+
       const data = snapshot.docs.map(doc => {
         const d = doc.data();
+        const wpKey = `${d.branchId}_${d.date}`;
+        const wpRemarks = workPlanMap.get(wpKey);
         return {
           id: doc.id,
           date: d.date,
@@ -193,10 +213,15 @@ export default function Admin({ userEmail }: AdminProps) {
           branchName: branchMap.get(d.branchId) || 'Unknown',
           executiveId: d.executiveId,
           executiveName: execMap.get(d.executiveId) || 'Unknown',
-          targetQty: d.targetQty || 0,
-          achQty: d.achQty || 0,
-          cashQty: d.cashQty || 0,
+          cardCollectionTarget: d.cardCollectionTarget || 0,
+          salesTarget: d.salesTarget || 0,
+          joripTarget: d.joripTarget || 0,
+          cardCollectionAch: d.cardCollectionAch || 0,
+          salesAch: d.salesAch || 0,
+          joripAch: d.joripAch || 0,
           remarks: d.remarks || '',
+          todaysWorkPlan: d.todaysWorkPlan || '',
+          managerWorkPlanRemarks: wpRemarks || '',
           editHistory: d.editHistory || [],
         };
       });
@@ -341,10 +366,6 @@ export default function Admin({ userEmail }: AdminProps) {
   const enteredCount = branchSummary.filter(b => b.hasEntry).length;
   const notEnteredCount = branchSummary.filter(b => !b.hasEntry).length;
 
-  // Work Plan counts
-  const wpSubmittedCount = workPlanStatus.filter(w => w.submitted).length;
-  const wpNotSubmittedCount = workPlanStatus.filter(w => !w.submitted).length;
-
   // Filter collections by selected branch and sort by branch name A-Z
   const filteredCollections = (selectedBranch === 'all' 
     ? collections 
@@ -427,27 +448,27 @@ export default function Admin({ userEmail }: AdminProps) {
           <h2 className="text-lg font-semibold text-gray-900 mb-3">📋 Work Plan Status (Today)</h2>
           <div className="flex gap-6 mb-3">
             <div>
-              <span className="text-2xl font-bold text-green-600">{wpSubmittedCount}</span>
+              <span className="text-2xl font-bold text-green-600">{workPlanStatus.filter(w => w.remarks).length}</span>
               <p className="text-sm text-gray-500">Submitted</p>
             </div>
             <div>
-              <span className="text-2xl font-bold text-red-600">{wpNotSubmittedCount}</span>
+              <span className="text-2xl font-bold text-red-600">{workPlanStatus.filter(w => !w.remarks).length}</span>
               <p className="text-sm text-gray-500">Not Submitted</p>
             </div>
           </div>
-          {wpNotSubmittedCount > 0 && (
+          {workPlanStatus.filter(w => !w.remarks).length > 0 && (
             <div className="mb-3">
               <p className="text-sm text-gray-600">
                 <span className="font-medium text-red-600">Not Submitted:</span>{' '}
-                {workPlanStatus.filter(w => !w.submitted).map(w => w.branchName).join(', ')}
+                {workPlanStatus.filter(w => !w.remarks).map(w => w.branchName).join(', ')}
               </p>
             </div>
           )}
-          {wpSubmittedCount > 0 && (
+          {workPlanStatus.filter(w => w.remarks).length > 0 && (
             <div>
               <p className="text-sm text-gray-600">
                 <span className="font-medium text-green-600">Submitted:</span>{' '}
-                {workPlanStatus.filter(w => w.submitted).map(w => w.branchName).join(', ')}
+                {workPlanStatus.filter(w => w.remarks).map(w => w.branchName).join(', ')}
               </p>
             </div>
           )}
@@ -470,25 +491,17 @@ export default function Admin({ userEmail }: AdminProps) {
                 <tr>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
                   <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">WhatsApp Submitted</th>
-                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Remarks</th>
+                  <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Work Plan Details</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {workPlanStatus.length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-4 text-center text-gray-500">No data available</td></tr>
+                  <tr><td colSpan={3} className="px-4 py-4 text-center text-gray-500">No data available</td></tr>
                 ) : (
                   workPlanStatus.map((wp, idx) => (
-                    <tr key={wp.branchId} className={!wp.submitted ? 'bg-red-50' : ''}>
+                    <tr key={wp.branchId} className={!wp.remarks ? 'bg-red-50' : ''}>
                       <td className="px-4 py-2 text-sm font-medium text-gray-900">{idx + 1}</td>
                       <td className="px-4 py-2 text-sm text-gray-900">{wp.branchName}</td>
-                      <td className="px-4 py-2 text-sm">
-                        {wp.submitted ? (
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-100 text-green-800">✓ Yes</span>
-                        ) : (
-                          <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-100 text-red-800">✗ No</span>
-                        )}
-                      </td>
                       <td className="px-4 py-2 text-sm text-gray-600">{wp.remarks || '-'}</td>
                     </tr>
                   ))
@@ -571,60 +584,64 @@ export default function Admin({ userEmail }: AdminProps) {
         {/* Data Table */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
+            <table className="min-w-full divide-y divide-gray-200 text-xs sm:text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Executive</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Target</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">ACH</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Cash</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Balance</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">%</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Date</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Branch</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Exec</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Card T</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sales T</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jorip T</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Card A</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Sales A</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Jorip A</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">%</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Exec Work Plan</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Evening Report</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Manager WP</th>
+                  <th className="px-2 sm:px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {loading ? (
-                  <tr><td colSpan={9} className="px-4 py-4 text-center text-gray-500">Loading...</td></tr>
+                  <tr><td colSpan={14} className="px-2 sm:px-4 py-4 text-center text-gray-500">Loading...</td></tr>
                 ) : filteredCollections.length === 0 ? (
-                  <tr><td colSpan={9} className="px-4 py-4 text-center text-gray-500">No data available</td></tr>
+                  <tr><td colSpan={14} className="px-2 sm:px-4 py-4 text-center text-gray-500">No data available</td></tr>
                 ) : (
                   filteredCollections.map((row) => {
-                    const balance = row.targetQty - row.achQty;
-                    const percent = row.targetQty > 0 ? (row.achQty / row.targetQty) * 100 : 0;
+                    const totalTarget = row.cardCollectionTarget + row.salesTarget + row.joripTarget;
+                    const totalAch = row.cardCollectionAch + row.salesAch + row.joripAch;
+                    const percent = totalTarget > 0 ? (totalAch / totalTarget) * 100 : 0;
                     const isEditing = editingId === row.id;
                     return (
                       <tr key={row.id} className={isEditing ? 'bg-yellow-50' : ''}>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.date}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.branchName}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{row.executiveName}</td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          {isEditing ? <input type="number" value={editForm.target} onChange={(e) => setEditForm({ ...editForm, target: e.target.value })} className="w-20 px-2 py-1 border rounded text-sm" /> : row.targetQty}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          {isEditing ? <input type="number" value={editForm.ach} onChange={(e) => setEditForm({ ...editForm, ach: e.target.value })} className="w-20 px-2 py-1 border rounded text-sm" /> : row.achQty}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          {isEditing ? <input type="number" value={editForm.cash} onChange={(e) => setEditForm({ ...editForm, cash: e.target.value })} className="w-20 px-2 py-1 border rounded text-sm" /> : row.cashQty}
-                        </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{balance}</td>
-                        <td className="px-4 py-3 whitespace-nowrap">
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.date}</td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.branchName}</td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.executiveName}</td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.cardCollectionTarget}</td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.salesTarget}</td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.joripTarget}</td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.cardCollectionAch}</td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.salesAch}</td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.joripAch}</td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap">
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAchievementBgColor(percent)}`}>{percent.toFixed(0)}%</span>
                         </td>
-                        <td className="px-4 py-3 whitespace-nowrap text-sm">
-                          {isEditing ? (
-                            <div className="flex gap-2">
-                              <button onClick={() => handleSaveEdit(row)} disabled={saving} className="text-green-600 hover:text-green-800 font-medium">{saving ? '...' : 'Save'}</button>
-                              <button onClick={handleCancelEdit} className="text-gray-600 hover:text-gray-800">Cancel</button>
-                            </div>
-                          ) : (
-                            <div className="flex gap-2">
-                              <button onClick={() => handleEdit(row)} className="text-blue-600 hover:text-blue-800">Edit</button>
-                              <button onClick={() => handleDelete(row.id)} className="text-red-600 hover:text-red-800">Delete</button>
-                            </div>
-                          )}
+                        <td className="px-2 sm:px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={row.todaysWorkPlan || '-'}>
+                          {row.todaysWorkPlan || '-'}
+                        </td>
+                        <td className="px-2 sm:px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={row.remarks || '-'}>
+                          {row.remarks || '-'}
+                        </td>
+                        <td className="px-2 sm:px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={row.managerWorkPlanRemarks || '-'}>
+                          {row.managerWorkPlanRemarks || '-'}
+                        </td>
+                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-sm">
+                          <div className="flex gap-1">
+                            <button onClick={() => handleEdit(row)} className="text-blue-600 hover:text-blue-800 text-xs">Edit</button>
+                            <button onClick={() => handleDelete(row.id)} className="text-red-600 hover:text-red-800 text-xs">Del</button>
+                          </div>
                         </td>
                       </tr>
                     );
