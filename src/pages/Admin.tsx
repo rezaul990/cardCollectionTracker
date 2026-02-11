@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { collection, query, where, getDocs, orderBy, deleteDoc, doc } from 'firebase/firestore';
+import { collection, query, where, getDocs, orderBy, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
 import { getAchievementBgColor } from '../components/StatCard';
@@ -56,6 +56,16 @@ export default function Admin({ userEmail }: AdminProps) {
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedBranch, setSelectedBranch] = useState<string>('all');
   const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState({
+    cardCollectionTarget: '',
+    salesTarget: '',
+    joripTarget: '',
+    cardCollectionAch: '',
+    salesAch: '',
+    joripAch: '',
+    remarks: ''
+  });
   const [sendingTelegram, setSendingTelegram] = useState(false);
   const [last3DaysData, setLast3DaysData] = useState<CollectionRow[]>([]);
   const [workPlanStatus, setWorkPlanStatus] = useState<WorkPlanStatus[]>([]);
@@ -251,6 +261,95 @@ export default function Admin({ userEmail }: AdminProps) {
       fetchCollections(branches, executives);
     }
   }, [startDate, endDate]);
+
+  const handleEdit = (row: CollectionRow) => {
+    setEditingId(row.id);
+    setEditForm({
+      cardCollectionTarget: row.cardCollectionTarget.toString(),
+      salesTarget: row.salesTarget.toString(),
+      joripTarget: row.joripTarget.toString(),
+      cardCollectionAch: row.cardCollectionAch.toString(),
+      salesAch: row.salesAch.toString(),
+      joripAch: row.joripAch.toString(),
+      remarks: row.remarks,
+    });
+  };
+
+  const handleCancelEdit = () => {
+    setEditingId(null);
+    setEditForm({
+      cardCollectionTarget: '',
+      salesTarget: '',
+      joripTarget: '',
+      cardCollectionAch: '',
+      salesAch: '',
+      joripAch: '',
+      remarks: ''
+    });
+  };
+
+  const handleSaveEdit = async (row: CollectionRow) => {
+    try {
+      const newCardTarget = parseInt(editForm.cardCollectionTarget) || 0;
+      const newSalesTarget = parseInt(editForm.salesTarget) || 0;
+      const newJoripTarget = parseInt(editForm.joripTarget) || 0;
+      const newCardAch = parseInt(editForm.cardCollectionAch) || 0;
+      const newSalesAch = parseInt(editForm.salesAch) || 0;
+      const newJoripAch = parseInt(editForm.joripAch) || 0;
+
+      const newHistory: EditHistory[] = [...(row.editHistory || [])];
+      
+      if (row.cardCollectionTarget !== newCardTarget) {
+        newHistory.push({ field: 'Card Target', oldValue: row.cardCollectionTarget, newValue: newCardTarget, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
+      }
+      if (row.salesTarget !== newSalesTarget) {
+        newHistory.push({ field: 'Sales Target', oldValue: row.salesTarget, newValue: newSalesTarget, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
+      }
+      if (row.joripTarget !== newJoripTarget) {
+        newHistory.push({ field: 'Jorip Target', oldValue: row.joripTarget, newValue: newJoripTarget, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
+      }
+      if (row.cardCollectionAch !== newCardAch) {
+        newHistory.push({ field: 'Card ACH', oldValue: row.cardCollectionAch, newValue: newCardAch, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
+      }
+      if (row.salesAch !== newSalesAch) {
+        newHistory.push({ field: 'Sales ACH', oldValue: row.salesAch, newValue: newSalesAch, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
+      }
+      if (row.joripAch !== newJoripAch) {
+        newHistory.push({ field: 'Jorip ACH', oldValue: row.joripAch, newValue: newJoripAch, editedAt: new Date(), editedBy: userEmail + ' (Admin)' });
+      }
+
+      await updateDoc(doc(db, 'dailyCollections', row.id), {
+        cardCollectionTarget: newCardTarget,
+        salesTarget: newSalesTarget,
+        joripTarget: newJoripTarget,
+        cardCollectionAch: newCardAch,
+        salesAch: newSalesAch,
+        joripAch: newJoripAch,
+        remarks: editForm.remarks,
+        editHistory: newHistory,
+        lastUpdated: serverTimestamp(),
+      });
+
+      setCollections(prev => prev.map(c =>
+        c.id === row.id ? {
+          ...c,
+          cardCollectionTarget: newCardTarget,
+          salesTarget: newSalesTarget,
+          joripTarget: newJoripTarget,
+          cardCollectionAch: newCardAch,
+          salesAch: newSalesAch,
+          joripAch: newJoripAch,
+          remarks: editForm.remarks,
+          editHistory: newHistory
+        } : c
+      ));
+      setEditingId(null);
+      alert('Entry updated successfully!');
+    } catch (error) {
+      console.error('Error updating:', error);
+      alert('Failed to update entry');
+    }
+  };
 
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this entry?')) return;
@@ -564,33 +663,65 @@ export default function Admin({ userEmail }: AdminProps) {
                     const totalTarget = row.cardCollectionTarget + row.salesTarget + row.joripTarget;
                     const totalAch = row.cardCollectionAch + row.salesAch + row.joripAch;
                     const percent = totalTarget > 0 ? (totalAch / totalTarget) * 100 : 0;
+                    const isEditing = editingId === row.id;
+                    
                     return (
-                      <tr key={row.id}>
+                      <tr key={row.id} className={isEditing ? 'bg-yellow-50' : ''}>
                         <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.date}</td>
                         <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.branchName}</td>
                         <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.executiveName}</td>
-                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.cardCollectionTarget}</td>
-                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.salesTarget}</td>
-                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.joripTarget}</td>
-                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.cardCollectionAch}</td>
-                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.salesAch}</td>
-                        <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.joripAch}</td>
+                        
+                        {isEditing ? (
+                          <>
+                            <td className="px-2 sm:px-4 py-3"><input type="number" value={editForm.cardCollectionTarget} onChange={(e) => setEditForm({...editForm, cardCollectionTarget: e.target.value})} className="w-16 px-1 py-1 border rounded text-xs" /></td>
+                            <td className="px-2 sm:px-4 py-3"><input type="number" value={editForm.salesTarget} onChange={(e) => setEditForm({...editForm, salesTarget: e.target.value})} className="w-16 px-1 py-1 border rounded text-xs" /></td>
+                            <td className="px-2 sm:px-4 py-3"><input type="number" value={editForm.joripTarget} onChange={(e) => setEditForm({...editForm, joripTarget: e.target.value})} className="w-16 px-1 py-1 border rounded text-xs" /></td>
+                            <td className="px-2 sm:px-4 py-3"><input type="number" value={editForm.cardCollectionAch} onChange={(e) => setEditForm({...editForm, cardCollectionAch: e.target.value})} className="w-16 px-1 py-1 border rounded text-xs" /></td>
+                            <td className="px-2 sm:px-4 py-3"><input type="number" value={editForm.salesAch} onChange={(e) => setEditForm({...editForm, salesAch: e.target.value})} className="w-16 px-1 py-1 border rounded text-xs" /></td>
+                            <td className="px-2 sm:px-4 py-3"><input type="number" value={editForm.joripAch} onChange={(e) => setEditForm({...editForm, joripAch: e.target.value})} className="w-16 px-1 py-1 border rounded text-xs" /></td>
+                          </>
+                        ) : (
+                          <>
+                            <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.cardCollectionTarget}</td>
+                            <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.salesTarget}</td>
+                            <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.joripTarget}</td>
+                            <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.cardCollectionAch}</td>
+                            <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.salesAch}</td>
+                            <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-gray-900">{row.joripAch}</td>
+                          </>
+                        )}
+                        
                         <td className="px-2 sm:px-4 py-3 whitespace-nowrap">
                           <span className={`px-2 py-1 text-xs font-medium rounded-full ${getAchievementBgColor(percent)}`}>{percent.toFixed(0)}%</span>
                         </td>
                         <td className="px-2 sm:px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={row.todaysWorkPlan || '-'}>
                           {row.todaysWorkPlan || '-'}
                         </td>
-                        <td className="px-2 sm:px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={row.remarks || '-'}>
-                          {row.remarks || '-'}
-                        </td>
+                        
+                        {isEditing ? (
+                          <td className="px-2 sm:px-4 py-3"><input type="text" value={editForm.remarks} onChange={(e) => setEditForm({...editForm, remarks: e.target.value})} className="w-full px-1 py-1 border rounded text-xs" placeholder="Evening Report" /></td>
+                        ) : (
+                          <td className="px-2 sm:px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={row.remarks || '-'}>
+                            {row.remarks || '-'}
+                          </td>
+                        )}
+                        
                         <td className="px-2 sm:px-4 py-3 text-sm text-gray-600 max-w-xs truncate" title={row.managerWorkPlanRemarks || '-'}>
                           {row.managerWorkPlanRemarks || '-'}
                         </td>
+                        
                         <td className="px-2 sm:px-4 py-3 whitespace-nowrap text-sm">
-                          <div className="flex gap-1">
-                            <button onClick={() => handleDelete(row.id)} className="text-red-600 hover:text-red-800 text-xs">Del</button>
-                          </div>
+                          {isEditing ? (
+                            <div className="flex gap-1">
+                              <button onClick={() => handleSaveEdit(row)} className="text-green-600 hover:text-green-800 text-xs font-medium">Save</button>
+                              <button onClick={handleCancelEdit} className="text-gray-600 hover:text-gray-800 text-xs">Cancel</button>
+                            </div>
+                          ) : (
+                            <div className="flex gap-1">
+                              <button onClick={() => handleEdit(row)} className="text-blue-600 hover:text-blue-800 text-xs">Edit</button>
+                              <button onClick={() => handleDelete(row.id)} className="text-red-600 hover:text-red-800 text-xs">Del</button>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     );
