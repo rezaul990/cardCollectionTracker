@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
 import StatCard, { getAchievementColor, getAchievementBgColor } from '../components/StatCard';
 
 interface DashboardProps {
@@ -131,17 +132,18 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50 flex flex-col">
         <Navbar userEmail={userEmail} isAdmin={false} />
         <div className="flex items-center justify-center h-64">
           <p className="text-gray-500">Loading...</p>
         </div>
+        <Footer />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Navbar userEmail={userEmail} isAdmin={false} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
@@ -243,6 +245,7 @@ export default function Dashboard({ userEmail, branchId, branchName }: Dashboard
           </div>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

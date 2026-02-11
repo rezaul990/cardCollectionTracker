@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
 
 interface BranchesProps {
   userEmail: string;
@@ -109,7 +110,7 @@ export default function Branches({ userEmail }: BranchesProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Navbar userEmail={userEmail} isAdmin={true} />
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
@@ -242,6 +243,7 @@ export default function Branches({ userEmail }: BranchesProps) {
           </table>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }

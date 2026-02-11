@@ -26,10 +26,15 @@ export default function Navbar({ userEmail, isAdmin }: NavbarProps) {
 
   return (
     <nav className="bg-white shadow-sm border-b border-gray-200">
+      {/* Developer Credit Banner */}
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 text-white text-center py-2 text-sm sm:text-base shadow-md">
+        <span className="font-bold tracking-wide">Developed By Md. Rezaul Karim - RCM (Tangail Area)</span>
+      </div>
+      
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center space-x-8">
-            <span className="text-xl font-semibold text-gray-900">Collection Tracker</span>
+            <span className="text-xl font-semibold text-gray-900">Daily Work Management</span>
             <div className="hidden sm:flex space-x-4">
               {isAdmin ? (
                 <>

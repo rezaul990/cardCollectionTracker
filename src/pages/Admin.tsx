@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { collection, query, where, getDocs, orderBy, deleteDoc, doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import Navbar from '../components/Navbar';
+import Footer from '../components/Footer';
 import { getAchievementBgColor } from '../components/StatCard';
 import { sendTelegramMessage, formatSummaryReport } from '../utils/telegram';
 
@@ -453,7 +454,7 @@ export default function Admin({ userEmail }: AdminProps) {
   const lowestPerformers = getLowestPerformers();
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 flex flex-col">
       <Navbar userEmail={userEmail} isAdmin={true} />
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
@@ -732,6 +733,7 @@ export default function Admin({ userEmail }: AdminProps) {
           </div>
         </div>
       </main>
+      <Footer />
     </div>
   );
 }
